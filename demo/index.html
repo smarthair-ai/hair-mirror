@@ -55,6 +55,7 @@
     <button class="navtab" data-page="archive">🗂 方案存档</button>
   </nav>
   <div class="top-right">
+    <a href="/" class="nav-back" title="返回首页">← 返回首页</a>
     <span id="backendDot" class="be-dot" title="后端状态">●</span>
     <span class="privacy">🔒 人脸仅本机处理</span>
     <button class="navmore" id="btnNavMore" title="更多" aria-label="更多菜单">⋮</button>
@@ -343,7 +344,10 @@
   </div>
 </main>
 
-<footer class="foot">发型数据源自《收集表》· 渲染与人脸分析均在本地完成 · 后端仅存方案文本、绝不上传照片</footer>
+<footer class="foot">
+  <p class="foot-privacy">🔒 本地图像处理，原始人脸数据不上云端长期存储</p>
+  <p>发型数据源自《收集表》· 渲染与人脸分析均在本地完成 · 后端仅存方案文本、绝不上传照片</p>
+</footer>
 
 <!-- ===================== 移动端专用 UI ===================== -->
 <button class="mobile-fab" id="mobileFab" title="工具面板" aria-label="打开工具面板">✂</button>
