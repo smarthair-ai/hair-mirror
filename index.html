@@ -86,6 +86,12 @@
           <canvas id="origCanvas" class="orig" width="720" height="880"></canvas>
           <div id="camHint" class="cam-hint">正对摄像头，光线充足</div>
         </div>
+        <div class="cap-actions">
+          <button id="btnCapture" class="primary big">📷 拍照</button>
+          <button id="btnRetryCam" class="ghost" hidden>🔄 重试摄像头</button>
+          <button id="btnUpload" class="ghost">上传照片</button>
+          <input type="file" id="fileInput" accept="image/*" capture="user" hidden />
+        </div>
         <div id="manualWrap" class="manual-wrap" hidden>
           <label>脸型 <select id="manFace"></select></label>
           <label>肤色冷暖
@@ -111,12 +117,6 @@
           </label>
           <label class="chk"><input type="checkbox" id="manEasy" /> 偏好易打理</label>
           <button id="btnManApply" class="primary">应用并生成方案</button>
-        </div>
-        <div class="cap-actions">
-          <button id="btnCapture" class="primary big">📷 拍照</button>
-          <button id="btnRetryCam" class="ghost" hidden>🔄 重试摄像头</button>
-          <button id="btnUpload" class="ghost">上传照片</button>
-          <input type="file" id="fileInput" accept="image/*" capture="user" hidden />
         </div>
         <p id="statusMsg" class="status"></p>
       </div>

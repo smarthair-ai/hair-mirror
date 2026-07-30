@@ -121,7 +121,7 @@ p{margin:0;} .sub{font-size:12px; color:var(--sub); margin-top:2px;}
 .manual-wrap label{font-size:13px; color:var(--sub); display:flex; flex-direction:column; gap:5px;}
 .manual-wrap select{padding:11px; min-height:var(--tap); border:1px solid var(--line); border-radius:12px; font-size:15px;}
 .manual-wrap .chk{flex-direction:row; align-items:center; gap:8px;}
-.cap-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+.cap-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
 .status{font-size:12px; color:var(--warn); margin-top:8px; min-height:16px; line-height:1.5;}
 
 /* 按钮 */
