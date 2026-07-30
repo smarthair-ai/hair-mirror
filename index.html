@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>智能发型魔镜 · 理发店平板系统</title>
+<link rel="stylesheet" href="css/style.css" />
+<!-- 加固：原腾讯 beacon 统计为渲染阻塞外部脚本，CDN 不可达会卡死整页。
+     改为异步注入 + 失败静默，外部网络异常不再影响页面打开。 -->
+<script>
+(function(){
+  try{
+    var s=document.createElement('script');
+    s.src='https://beacon.cdn.qq.com/sdk/4.5.9/beacon_web.min.js';
+    s.async=true;
+    s.onload=function(){
+      try{
+        var beacon=new BeaconAction({
+          appkey:'0WEB06U85YBSLJNL',
+          versionCode:'1.0.0',
+          channelID:'share',
+          delay:1000,
+          sessionDuration:30*60*1000,
+          isOversea:false,
+          needReportRqdEvent:false
+        });
+        beacon.onDirectUserAction('preview_page_view',{
+          'url':location.href,
+          'referrer':document.referrer,
+          'title':document.title,
+          'sandbox_id':'214d074e3461478f9d66ea92716c79e2'
+        });
+      }catch(e){}
+    };
+    s.onerror=function(){}; // CDN 不可达也完全不影响页面
+    document.head.appendChild(s);
+  }catch(e){}
+})();
+</script></head>
+<body>
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">💈</span>
+    <div>
+      <h1>智能发型魔镜</h1>
+      <p class="sub">理发店平板 · 本地 AI 分析 · 照片不上传</p>
+    </div>
+  </div>
+  <nav class="topnav" id="topnav">
+    <button class="navtab active" data-page="studio">✂ 试戴工作台</button>
+    <button class="navtab" data-page="library">📚 本店发型库</button>
+    <button class="navtab" data-page="popular">🔥 热门榜单</button>
+    <button class="navtab" data-page="season">📅 季节专题</button>
+    <button class="navtab" data-page="archive">🗂 方案存档</button>
+  </nav>
+  <div class="top-right">
+    <span id="backendDot" class="be-dot" title="后端状态">●</span>
+    <span class="privacy">🔒 人脸仅本机处理</span>
+  </div>
+</header>
+
+<!-- ===================== 页面1：试戴工作台 ===================== -->
+<!-- 左右分栏：左 42% 理发师工作台（全部操作），右 58% 顾客预览大屏（干净简洁） -->
+<main class="page page-studio active" id="page-studio">
+
+  <!-- ---------- 左侧：理发师工作台（全部操作控件） ---------- -->
+  <aside class="barber-panel">
+    <div class="panel-scroll">
+
+      <!-- ① 采集 -->
+      <div class="card">
+        <h3>① 采集面部</h3>
+        <div class="cap-tabs">
+          <button id="btnCamera" class="tab active">摄像头</button>
+          <button id="btnManual" class="tab">手动/收集表</button>
+        </div>
+        <div id="camWrap" class="cam-wrap">
+          <video id="cam" autoplay playsinline muted></video>
+          <canvas id="origCanvas" class="orig" width="720" height="880"></canvas>
+          <div id="camHint" class="cam-hint">正对摄像头，光线充足</div>
+        </div>
+        <div id="manualWrap" class="manual-wrap" hidden>
+          <label>脸型 <select id="manFace"></select></label>
+          <label>肤色冷暖
+            <select id="manSkin">
+              <option value="warm">暖调（偏黄/金）</option>
+              <option value="cool">冷调（偏粉/蓝）</option>
+              <option value="neutral">中性</option>
+            </select>
+          </label>
+          <label>顾客性别
+            <select id="manGender">
+              <option value="female" selected>女</option>
+              <option value="male">男</option>
+              <option value="all">不限</option>
+            </select>
+          </label>
+          <label>当前发长
+            <select id="manLen">
+              <option value="short">短发</option>
+              <option value="medium" selected>中长</option>
+              <option value="long">长发</option>
+            </select>
+          </label>
+          <label class="chk"><input type="checkbox" id="manEasy" /> 偏好易打理</label>
+          <button id="btnManApply" class="primary">应用并生成方案</button>
+        </div>
+        <div class="cap-actions">
+          <button id="btnCapture" class="primary big">📷 拍照</button>
+          <button id="btnRetryCam" class="ghost" hidden>🔄 重试摄像头</button>
+          <button id="btnUpload" class="ghost">上传照片</button>
+          <input type="file" id="fileInput" accept="image/*" capture="user" hidden />
+        </div>
+        <p id="statusMsg" class="status"></p>
+      </div>
+
+      <!-- ② 面部分析 -->
+      <div class="card">
+        <h3>② 面部分析</h3>
+        <div id="metricsBox" class="metrics">
+          <span class="m-tag">尚未分析</span>
+          <p class="hint">拍照后自动提取脸型、肤色冷暖与性别，可手动修改。</p>
+        </div>
+      </div>
+
+      <!-- ③ 发质问卷 -->
+      <div class="card">
+        <h3>③ 发质问卷</h3>
+        <div class="quiz">
+          <div class="quiz-row">
+            <span class="lbl">发质类型</span>
+            <div class="seg-group" id="qHairType">
+              <button class="seg active" data-v="normal">正常</button>
+              <button class="seg" data-v="fine">细软</button>
+              <button class="seg" data-v="thick">粗硬多</button>
+              <button class="seg" data-v="curly">自然卷</button>
+            </div>
+          </div>
+          <div class="quiz-row">
+            <span class="lbl">打理时长</span>
+            <div class="seg-group" id="qStyleTime">
+              <button class="seg" data-v="quick">≤5分钟</button>
+              <button class="seg active" data-v="normal">5-15分钟</button>
+              <button class="seg" data-v="patient">愿意花时间</button>
+            </div>
+          </div>
+          <div class="quiz-row">
+            <span class="lbl">接受烫染</span>
+            <div class="seg-group" id="qPerm">
+              <button class="seg active" data-v="yes">接受</button>
+              <button class="seg" data-v="no">不接受</button>
+            </div>
+          </div>
+          <button id="btnQuiz" class="primary">🎯 结合分析生成方案</button>
+        </div>
+      </div>
+
+      <!-- ④ 发型调节 -->
+      <div class="card">
+        <h3>④ 发型调节</h3>
+        <div class="ctrl-row"><span class="lbl">发色</span><div id="colorBox" class="swatches"></div></div>
+        <div class="ctrl-row"><span class="lbl">细分色</span>
+          <div class="quick-colors">
+            <button class="qc" data-c="coolbrown">冷棕</button>
+            <button class="qc" data-c="blacktea">黑茶</button>
+            <button class="qc" data-c="milktea">奶茶</button>
+            <button class="qc" data-c="redbrown">红棕</button>
+          </div>
+        </div>
+        <div class="ctrl-row"><span class="lbl">质感</span>
+          <button class="seg active" data-tex="glossy">通透光泽</button>
+          <button class="seg" data-tex="frosted">雾面</button>
+          <button class="seg" data-tex="matte">哑光</button>
+        </div>
+        <div class="ctrl-row"><span class="lbl">光线</span>
+          <button class="seg active" data-light="indoor">室内光</button>
+          <button class="seg" data-light="sun">太阳光</button>
+        </div>
+        <div class="ctrl-row col">
+          <label class="slider-lbl">头发长短 <span id="lenVal">中</span>
+            <input type="range" id="lenSlider" min="0" max="1" step="0.01" value="0.5" /></label>
+          <label class="slider-lbl">卷度 <span id="curlVal">自然</span>
+            <input type="range" id="curlSlider" min="0" max="1" step="0.01" value="0.5" /></label>
+        </div>
+        <button id="btnFavorite" class="fav-btn">☆ 收藏当前发型</button>
+      </div>
+
+      <!-- ⑤ 预览与对比控制 -->
+      <div class="card">
+        <h3>⑤ 预览与对比</h3>
+        <div class="cust-toggles panel-toggles">
+          <label class="switch"><input type="checkbox" id="toggleSide" checked /> 原图对比</label>
+          <label class="switch"><input type="checkbox" id="toggleCompare" /> 双方案对比</label>
+          <label class="switch"><input type="checkbox" id="toggleTryOn" checked /> 真人试发</label>
+          <label class="switch"><input type="checkbox" id="toggleRealImg" /> 显示真人参考图</label>
+        </div>
+        <div id="cmpBar" class="cmp-bar" hidden>
+          <span class="lbl">对比款：</span>
+          <select id="cmpSelect" class="cmp-select"></select>
+          <button id="btnSwap" class="ghost sm">⇄ 互换 A/B</button>
+        </div>
+        <div class="view-switch"><span class="lbl">视角</span>
+          <button class="viewBtn active" data-view="front">正面</button></div>
+      </div>
+
+      <!-- ⑥ 操作按钮 -->
+      <div class="card action-card">
+        <div class="shot-row">
+          <button id="btnShot" class="primary">💾 保存效果图</button>
+          <button id="btnBarber" class="primary alt">📋 沟通卡片</button>
+        </div>
+        <button id="btnArchive" class="primary wide">🗂 存档本方案</button>
+      </div>
+
+      <!-- ⑦ 三套优选方案（发型选择列表） -->
+      <div class="card">
+        <h3>⑦ 三套优选方案 <span class="mini-note">（点方案卡即试戴，含避雷提示）</span></h3>
+        <div id="planBox" class="plans"></div>
+      </div>
+
+      <!-- ⑧ 智能推荐 -->
+      <div class="card">
+        <h3>⑧ 智能推荐 <span class="mini-note">结合脸型/肤色/发质</span></h3>
+        <div class="filters" id="filterBox">
+          <button class="flt active" data-tag="all">全部</button>
+          <button class="flt" data-tag="简约">简约</button>
+          <button class="flt" data-tag="甜酷">甜酷</button>
+          <button class="flt" data-tag="成熟">成熟</button>
+          <button class="flt" data-tag="通勤">通勤</button>
+        </div>
+        <div id="recGrid" class="grid"></div>
+      </div>
+
+      <!-- ⑨ 收藏夹 -->
+      <div class="card">
+        <h3>⑨ 收藏夹 <span id="favCount" class="badge">0</span></h3>
+        <div id="favBox" class="grid"></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ---------- 右侧：顾客预览大屏（干净简洁，仅画面 + 少量微调） ---------- -->
+  <section class="customer-view">
+    <div class="cust-head">
+      <h2>👀 顾客预览</h2>
+      <span class="cust-style-tag">当前 · <span id="curStyleName">—</span></span>
+    </div>
+
+    <div id="previewArea" class="preview-area">
+      <figure class="pv" id="origFig">
+        <figcaption>原图</figcaption>
+        <div class="cv-box"><canvas id="origView" width="720" height="880"></canvas></div>
+      </figure>
+      <figure class="pv" id="effectFig">
+        <figcaption>试戴效果</figcaption>
+        <div class="cv-box effect-box">
+          <canvas id="effectCanvas" width="720" height="880"></canvas>
+          <img id="realRefImg" class="real-ref" alt="真人参考" hidden />
+        </div>
+      </figure>
+      <figure class="pv cmp-only" id="effectFigB" hidden>
+        <figcaption>对比 · <span id="curStyleNameB">—</span></figcaption>
+        <div class="cv-box effect-box">
+          <canvas id="effectCanvasB" width="720" height="880"></canvas>
+        </div>
+      </figure>
+    </div>
+
+    <p id="tryOnHint" class="hint cust-hint"></p>
+
+    <!-- 少量微调控件（贴合微调，紧凑横排） -->
+    <div class="fit-mini">
+      <div class="fit-head">
+        <span class="fit-title">✋ 贴合微调 <span class="fit-note">可单指拖动 / 双指缩放画面</span></span>
+        <button id="btnFitReset" class="ghost sm dark">↺ 重置</button>
+      </div>
+      <div class="fit-grid">
+        <label class="slider-lbl">大小 <span id="fitScaleVal">100%</span>
+          <input type="range" id="fitScale" min="0.7" max="1.4" step="0.01" value="1" /></label>
+        <label class="slider-lbl">左右 <span id="fitDxVal">0</span>
+          <input type="range" id="fitDx" min="-120" max="120" step="1" value="0" /></label>
+        <label class="slider-lbl">上下 <span id="fitDyVal">0</span>
+          <input type="range" id="fitDy" min="-120" max="120" step="1" value="0" /></label>
+        <label class="slider-lbl">旋转 <span id="fitRotVal">0°</span>
+          <input type="range" id="fitRot" min="-15" max="15" step="0.5" value="0" /></label>
+        <label class="slider-lbl wide-lbl">透明度 <span id="fitOpacityVal">100%</span>
+          <input type="range" id="fitOpacity" min="0.35" max="1" step="0.01" value="1" /></label>
+      </div>
+    </div>
+
+    <!-- 温柔寄语（顾客侧情绪安抚） -->
+    <div class="warm-banner" aria-label="温柔寄语">
+      <span class="warm-icon">💛</span>
+      <p id="warmWord" class="warm-word"></p>
+      <button id="btnWarmNext" class="warm-next" title="换一句">换一句 ›</button>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== 页面2：本店发型库 ===================== -->
+<main class="page page-library" id="page-library">
+  <div class="card">
+    <h2>📚 本店发型库 <span class="mini-note">共 <span id="dbCount">0</span> 款 · 点任意一款回工作台试戴</span></h2>
+    <div id="allGrid" class="grid grid-lib"></div>
+  </div>
+</main>
+
+<!-- ===================== 页面3：热门榜单 ===================== -->
+<main class="page page-popular" id="page-popular">
+  <div class="card">
+    <h2>🔥 本店热门发型榜单 <span class="mini-note">按人气热度排序</span></h2>
+    <div id="popularBox" class="rank-list"></div>
+  </div>
+</main>
+
+<!-- ===================== 页面4：季节专题 ===================== -->
+<main class="page page-season" id="page-season">
+  <div class="season-tabs" id="seasonTabs">
+    <button class="stab active" data-s="spring">🌸 春</button>
+    <button class="stab" data-s="summer">🌊 夏</button>
+    <button class="stab" data-s="autumn">🍂 秋</button>
+    <button class="stab" data-s="winter">❄️ 冬</button>
+  </div>
+  <div class="card">
+    <div id="seasonHead" class="season-head"></div>
+    <div id="seasonBox" class="grid grid-lib"></div>
+  </div>
+</main>
+
+<!-- ===================== 页面5：方案存档 ===================== -->
+<main class="page page-archive" id="page-archive">
+  <div class="card">
+    <h2>🗂 方案存档 <span id="archStatus" class="mini-note"></span></h2>
+    <div id="archiveBox" class="arch-list"></div>
+  </div>
+</main>
+
+<footer class="foot">发型数据源自《收集表》· 渲染与人脸分析均在本地完成 · 后端仅存方案文本、绝不上传照片</footer>
+
+<script src="js/face-api.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/hairmeta.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/store.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
