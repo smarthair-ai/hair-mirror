@@ -2,363 +2,351 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>智能发型魔镜 · 理发店平板系统</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="SmartHair AI — AI+AR重新定义发型设计。3秒识别脸型与发质，多角度虚拟预览剪发效果。" />
+<title>SmartHair AI — AI+AR 智能发型设计</title>
 <link rel="stylesheet" href="css/style.css" />
-<!-- 加固：原腾讯 beacon 统计为渲染阻塞外部脚本，CDN 不可达会卡死整页。
-     改为异步注入 + 失败静默，外部网络异常不再影响页面打开。 -->
-<script>
-(function(){
-  try{
-    var s=document.createElement('script');
-    s.src='https://beacon.cdn.qq.com/sdk/4.5.9/beacon_web.min.js';
-    s.async=true;
-    s.onload=function(){
-      try{
-        var beacon=new BeaconAction({
-          appkey:'0WEB06U85YBSLJNL',
-          versionCode:'1.0.0',
-          channelID:'share',
-          delay:1000,
-          sessionDuration:30*60*1000,
-          isOversea:false,
-          needReportRqdEvent:false
-        });
-        beacon.onDirectUserAction('preview_page_view',{
-          'url':location.href,
-          'referrer':document.referrer,
-          'title':document.title,
-          'sandbox_id':'214d074e3461478f9d66ea92716c79e2'
-        });
-      }catch(e){}
-    };
-    s.onerror=function(){}; // CDN 不可达也完全不影响页面
-    document.head.appendChild(s);
-  }catch(e){}
-})();
-</script></head>
+<script src="js/main.js" defer></script>
+</head>
 <body>
-<!-- ===================== 顶栏 ===================== -->
-<header class="topbar">
-  <div class="brand">
-    <span class="logo">💈</span>
-    <div>
-      <h1>智能发型魔镜</h1>
-      <p class="sub">理发店平板 · 本地 AI 分析 · 照片不上传</p>
+
+<!-- ==================== 导航 ==================== -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#hero" class="nav-brand">
+      <span class="nav-logo">💈</span>
+      <span class="nav-name">SmartHair AI</span>
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#hero" class="nav-link active">首页</a>
+      <a href="#product" class="nav-link">产品介绍</a>
+      <a href="#about" class="nav-link">关于项目</a>
+      <a href="/demo/" class="nav-link nav-link-cta">Demo体验</a>
+      <a href="#contact" class="nav-link">联系我们</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="菜单">☰</button>
+  </div>
+</nav>
+
+<!-- ==================== Hero ==================== -->
+<section class="hero" id="hero">
+  <div class="hero-bg">
+    <div class="hero-orb hero-orb-1"></div>
+    <div class="hero-orb hero-orb-2"></div>
+    <div class="hero-orb hero-orb-3"></div>
+    <div class="hero-grid"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-badge reveal">
+      <span class="hero-badge-dot"></span> AI + AR 智能发型设计系统
+    </div>
+    <h1 class="hero-title reveal reveal-d1">
+      告别<span class="hero-highlight">「凭感觉」</span><br />
+      AI+AR重新定义发型设计
+    </h1>
+    <p class="hero-sub reveal reveal-d2">
+      3秒识别脸型与发质，多角度虚拟预览剪发效果<br />
+      顾客可视化选发型，理发师标准化施工
+    </p>
+    <div class="hero-actions reveal reveal-d3">
+      <a href="/demo/" class="btn btn-primary">
+        立即体验 Demo →
+      </a>
+      <a href="#product" class="btn btn-ghost">了解更多</a>
+    </div>
+    <div class="hero-stats reveal reveal-d4">
+      <div class="stat">
+        <div class="stat-num">98.7<span class="stat-unit">%</span></div>
+        <div class="stat-label">脸型识别准确率</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">&lt;0.3<span class="stat-unit">s</span></div>
+        <div class="stat-label">AR试戴响应速度</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">30<span class="stat-unit">+</span></div>
+        <div class="stat-label">智能发型款式库</div>
+      </div>
     </div>
   </div>
-  <nav class="topnav" id="topnav">
-    <button class="navtab active" data-page="studio">✂ 试戴工作台</button>
-    <button class="navtab" data-page="library">📚 本店发型库</button>
-    <button class="navtab" data-page="popular">🔥 热门榜单</button>
-    <button class="navtab" data-page="season">📅 季节专题</button>
-    <button class="navtab" data-page="archive">🗂 方案存档</button>
-  </nav>
-  <div class="top-right">
-    <span id="backendDot" class="be-dot" title="后端状态">●</span>
-    <span class="privacy">🔒 人脸仅本机处理</span>
-    <button class="navmore" id="btnNavMore" title="更多" aria-label="更多菜单">⋮</button>
-    <div class="navmore-menu" id="navMoreMenu">
-      <button class="mi" id="miStatus"><span class="dot" id="miDot"></span> <span id="miStatusText">后端在线</span></button>
-      <button class="mi" id="miPrivacy">🔒 隐私说明</button>
-      <button class="mi" id="miFeedback">💬 反馈建议</button>
+  <div class="hero-visual reveal reveal-d3">
+    <div class="hero-mockup">
+      <div class="mockup-screen">
+        <div class="mockup-dot"></div>
+        <div class="mockup-face">
+          <div class="mockup-ring mockup-ring-1"></div>
+          <div class="mockup-ring mockup-ring-2"></div>
+          <div class="mockup-icon">👤</div>
+        </div>
+        <div class="mockup-label">AI 面部分析中...</div>
+        <div class="mockup-bar"><div class="mockup-fill"></div></div>
+      </div>
+      <div class="mockup-card">
+        <div class="mockup-card-title">推荐发型</div>
+        <div class="mockup-card-row"><span>韩系云朵大波浪</span><span class="mockup-score">匹配92%</span></div>
+        <div class="mockup-card-row"><span>空气刘海黑长直</span><span class="mockup-score">匹配88%</span></div>
+        <div class="mockup-card-row"><span>日系蘑菇短</span><span class="mockup-score">匹配88%</span></div>
+      </div>
     </div>
   </div>
-</header>
+</section>
 
-<!-- ===================== 页面1：试戴工作台 ===================== -->
-<!-- 左右分栏：左 42% 理发师工作台（全部操作），右 58% 顾客预览大屏（干净简洁） -->
-<main class="page page-studio active" id="page-studio">
+<!-- ==================== 产品介绍 ==================== -->
+<section class="section" id="product">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">Product</span>
+      <h2 class="section-title">AI+AR 发型设计全流程</h2>
+      <p class="section-desc">从顾客进店到完美发型，五步智能闭环</p>
+    </div>
 
-  <!-- ---------- 左侧：理发师工作台（全部操作控件） ---------- -->
-  <aside class="barber-panel">
-    <div class="panel-scroll">
-
-      <!-- ① 采集 -->
-      <div class="card">
-        <h3>① 采集面部</h3>
-        <div class="cap-tabs">
-          <button id="btnCamera" class="tab active">摄像头</button>
-          <button id="btnManual" class="tab">手动/收集表</button>
+    <!-- 流程步骤 -->
+    <div class="flow reveal">
+      <div class="flow-line"></div>
+      <div class="flow-steps">
+        <div class="flow-step reveal reveal-d1">
+          <div class="flow-num">01</div>
+          <div class="flow-icon">📷</div>
+          <h4>采集人像</h4>
+          <p>顾客进店，摄像头实时采集面部图像，支持拍照或上传照片</p>
         </div>
-        <div id="camWrap" class="cam-wrap">
-          <video id="cam" autoplay playsinline muted></video>
-          <canvas id="origCanvas" class="orig" width="720" height="880"></canvas>
-          <div id="camHint" class="cam-hint">正对摄像头，光线充足</div>
+        <div class="flow-step reveal reveal-d2">
+          <div class="flow-num">02</div>
+          <div class="flow-icon">🧠</div>
+          <h4>AI 分析</h4>
+          <p>68点面部关键点识别，精准判定脸型、肤色冷暖与发质类型</p>
         </div>
-        <div class="cap-actions">
-          <button id="btnCapture" class="primary big">📷 拍照</button>
-          <button id="btnRetryCam" class="ghost" hidden>🔄 重试摄像头</button>
-          <button id="btnUpload" class="ghost">上传照片</button>
-          <input type="file" id="fileInput" accept="image/*" capture="user" hidden />
+        <div class="flow-step reveal reveal-d3">
+          <div class="flow-num">03</div>
+          <div class="flow-icon">📊</div>
+          <h4>智能匹配</h4>
+          <p>多权重算法从30+发型数据库中匹配最适合顾客的款式</p>
         </div>
-        <div id="manualWrap" class="manual-wrap" hidden>
-          <label>脸型 <select id="manFace"></select></label>
-          <label>肤色冷暖
-            <select id="manSkin">
-              <option value="warm">暖调（偏黄/金）</option>
-              <option value="cool">冷调（偏粉/蓝）</option>
-              <option value="neutral">中性</option>
-            </select>
-          </label>
-          <label>顾客性别
-            <select id="manGender">
-              <option value="female" selected>女</option>
-              <option value="male">男</option>
-              <option value="all">不限</option>
-            </select>
-          </label>
-          <label>当前发长
-            <select id="manLen">
-              <option value="short">短发</option>
-              <option value="medium" selected>中长</option>
-              <option value="long">长发</option>
-            </select>
-          </label>
-          <label class="chk"><input type="checkbox" id="manEasy" /> 偏好易打理</label>
-          <button id="btnManApply" class="primary">应用并生成方案</button>
+        <div class="flow-step reveal reveal-d4">
+          <div class="flow-num">04</div>
+          <div class="flow-icon">🎯</div>
+          <h4>生成方案</h4>
+          <p>输出三套优选方案，含避雷提示、打理指南与场景建议</p>
         </div>
-        <p id="statusMsg" class="status"></p>
-      </div>
-
-      <!-- ② 面部分析 -->
-      <div class="card">
-        <h3>② 面部分析</h3>
-        <div id="metricsBox" class="metrics">
-          <span class="m-tag">尚未分析</span>
-          <p class="hint">拍照后自动提取脸型、肤色冷暖与性别，可手动修改。</p>
+        <div class="flow-step reveal reveal-d5">
+          <div class="flow-num">05</div>
+          <div class="flow-icon">👀</div>
+          <h4>AR 试戴</h4>
+          <p>多角度虚拟预览剪发效果，顾客可视化确认，理发师标准化施工</p>
         </div>
       </div>
+    </div>
 
-      <!-- ③ 发质问卷 -->
-      <div class="card">
-        <h3>③ 发质问卷</h3>
-        <div class="quiz">
-          <div class="quiz-row">
-            <span class="lbl">发质类型</span>
-            <div class="seg-group" id="qHairType">
-              <button class="seg active" data-v="normal">正常</button>
-              <button class="seg" data-v="fine">细软</button>
-              <button class="seg" data-v="thick">粗硬多</button>
-              <button class="seg" data-v="curly">自然卷</button>
-            </div>
+    <!-- 功能亮点 -->
+    <div class="features reveal">
+      <h3 class="features-title">核心能力</h3>
+      <div class="features-grid">
+        <div class="feature-card glass-card reveal reveal-d1">
+          <div class="feature-icon-wrap"><span class="feature-icon">🔍</span></div>
+          <h4>AI 视觉识别</h4>
+          <p>7种脸型精准分类 · 肤色LAB冷暖分析 · 发质纹理推断。全在浏览器本地完成，照片不上传。</p>
+          <div class="feature-tags">
+            <span>TensorFlow.js</span><span>Face-API</span><span>本地推理</span>
           </div>
-          <div class="quiz-row">
-            <span class="lbl">打理时长</span>
-            <div class="seg-group" id="qStyleTime">
-              <button class="seg" data-v="quick">≤5分钟</button>
-              <button class="seg active" data-v="normal">5-15分钟</button>
-              <button class="seg" data-v="patient">愿意花时间</button>
-            </div>
-          </div>
-          <div class="quiz-row">
-            <span class="lbl">接受烫染</span>
-            <div class="seg-group" id="qPerm">
-              <button class="seg active" data-v="yes">接受</button>
-              <button class="seg" data-v="no">不接受</button>
-            </div>
-          </div>
-          <button id="btnQuiz" class="primary">🎯 结合分析生成方案</button>
         </div>
-      </div>
-
-      <!-- ④ 发型调节 -->
-      <div class="card">
-        <h3>④ 发型调节</h3>
-        <div class="ctrl-row"><span class="lbl">发色</span><div id="colorBox" class="swatches"></div></div>
-        <div class="ctrl-row"><span class="lbl">细分色</span>
-          <div class="quick-colors">
-            <button class="qc" data-c="coolbrown">冷棕</button>
-            <button class="qc" data-c="blacktea">黑茶</button>
-            <button class="qc" data-c="milktea">奶茶</button>
-            <button class="qc" data-c="redbrown">红棕</button>
+        <div class="feature-card glass-card reveal reveal-d2">
+          <div class="feature-icon-wrap"><span class="feature-icon">🎨</span></div>
+          <h4>AR 虚拟试戴</h4>
+          <p>Canvas 2D + WebGL 混合渲染，实时色彩映射，五维贴合微调，多视角切换。</p>
+          <div class="feature-tags">
+            <span>实时渲染</span><span>发色调节</span><span>360°预览</span>
           </div>
         </div>
-        <div class="ctrl-row"><span class="lbl">质感</span>
-          <button class="seg active" data-tex="glossy">通透光泽</button>
-          <button class="seg" data-tex="frosted">雾面</button>
-          <button class="seg" data-tex="matte">哑光</button>
+        <div class="feature-card glass-card reveal reveal-d3">
+          <div class="feature-icon-wrap"><span class="feature-icon">📚</span></div>
+          <h4>智能发型库</h4>
+          <p>30+款精选发型，按风格/场景/难度分类，每款配打理指南与避雷提示。</p>
+          <div class="feature-tags">
+            <span>多维度筛选</span><span>打理指南</span><span>避雷提示</span>
+          </div>
         </div>
-        <div class="ctrl-row"><span class="lbl">光线</span>
-          <button class="seg active" data-light="indoor">室内光</button>
-          <button class="seg" data-light="sun">太阳光</button>
+        <div class="feature-card glass-card reveal reveal-d4">
+          <div class="feature-icon-wrap"><span class="feature-icon">📋</span></div>
+          <h4>沟通卡片</h4>
+          <p>一键生成含效果图+发型参数的沟通卡片，消除顾客与理发师的理解偏差。</p>
+          <div class="feature-tags">
+            <span>效果图导出</span><span>方案存档</span><span>标准化施工</span>
+          </div>
         </div>
-        <div class="ctrl-row col">
-          <label class="slider-lbl">头发长短 <span id="lenVal">中</span>
-            <input type="range" id="lenSlider" min="0" max="1" step="0.01" value="0.5" /></label>
-          <label class="slider-lbl">卷度 <span id="curlVal">自然</span>
-            <input type="range" id="curlSlider" min="0" max="1" step="0.01" value="0.5" /></label>
+        <div class="feature-card glass-card reveal reveal-d5">
+          <div class="feature-icon-wrap"><span class="feature-icon">📱</span></div>
+          <h4>多端适配</h4>
+          <p>电脑/平板/手机全端支持，响应式布局，触控友好，适合理发店现场使用。</p>
+          <div class="feature-tags">
+            <span>响应式</span><span>触控优化</span><span>平板优先</span>
+          </div>
         </div>
-        <button id="btnFavorite" class="fav-btn">☆ 收藏当前发型</button>
+        <div class="feature-card glass-card reveal reveal-d6">
+          <div class="feature-icon-wrap"><span class="feature-icon">🔒</span></div>
+          <h4>隐私安全</h4>
+          <p>人脸分析全程在浏览器本地完成，照片绝不上传服务器，保护顾客隐私。</p>
+          <div class="feature-tags">
+            <span>端侧推理</span><span>零上传</span><span>GDPR友好</span>
+          </div>
+        </div>
       </div>
-
-      <!-- ⑤ 预览与对比控制 -->
-      <div class="card">
-        <h3>⑤ 预览与对比</h3>
-        <div class="cust-toggles panel-toggles">
-          <label class="switch"><input type="checkbox" id="toggleSide" checked /> 原图对比</label>
-          <label class="switch"><input type="checkbox" id="toggleCompare" /> 双方案对比</label>
-          <label class="switch"><input type="checkbox" id="toggleTryOn" checked /> 真人试发</label>
-          <label class="switch"><input type="checkbox" id="toggleRealImg" /> 显示真人参考图</label>
-        </div>
-        <div id="cmpBar" class="cmp-bar" hidden>
-          <span class="lbl">对比款：</span>
-          <select id="cmpSelect" class="cmp-select"></select>
-          <button id="btnSwap" class="ghost sm">⇄ 互换 A/B</button>
-        </div>
-        <div class="view-switch"><span class="lbl">视角</span>
-          <button class="viewBtn active" data-view="front">正面</button></div>
-      </div>
-
-      <!-- ⑥ 操作按钮 -->
-      <div class="card action-card">
-        <div class="shot-row">
-          <button id="btnShot" class="primary">💾 保存效果图</button>
-          <button id="btnBarber" class="primary alt">📋 沟通卡片</button>
-        </div>
-        <button id="btnArchive" class="primary wide">🗂 存档本方案</button>
-      </div>
-
-      <!-- ⑦ 三套优选方案（发型选择列表） -->
-      <div class="card">
-        <h3>⑦ 三套优选方案 <span class="mini-note">（点方案卡即试戴，含避雷提示）</span></h3>
-        <div id="planBox" class="plans"></div>
-      </div>
-
-      <!-- ⑧ 智能推荐 -->
-      <div class="card">
-        <h3>⑧ 智能推荐 <span class="mini-note">结合脸型/肤色/发质</span></h3>
-        <div class="filters" id="filterBox">
-          <button class="flt active" data-tag="all">全部</button>
-          <button class="flt" data-tag="简约">简约</button>
-          <button class="flt" data-tag="甜酷">甜酷</button>
-          <button class="flt" data-tag="成熟">成熟</button>
-          <button class="flt" data-tag="通勤">通勤</button>
-        </div>
-        <div id="recGrid" class="grid"></div>
-      </div>
-
-      <!-- ⑨ 收藏夹 -->
-      <div class="card">
-        <h3>⑨ 收藏夹 <span id="favCount" class="badge">0</span></h3>
-        <div id="favBox" class="grid"></div>
-      </div>
-
     </div>
-  </aside>
+  </div>
+</section>
 
-  <!-- ---------- 右侧：顾客预览大屏（干净简洁，仅画面 + 少量微调） ---------- -->
-  <section class="customer-view">
-    <div class="cust-head">
-      <h2>👀 顾客预览</h2>
-      <span class="cust-style-tag">当前 · <span id="curStyleName">—</span></span>
+<!-- ==================== 关于项目 ==================== -->
+<section class="section section-alt" id="about">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">About</span>
+      <h2 class="section-title">关于 SmartHair AI</h2>
+      <p class="section-desc">用技术消除理发行业的不确定性</p>
     </div>
 
-    <div id="previewArea" class="preview-area">
-      <figure class="pv" id="origFig">
-        <figcaption>原图</figcaption>
-        <div class="cv-box"><canvas id="origView" width="720" height="880"></canvas></div>
-      </figure>
-      <figure class="pv" id="effectFig">
-        <figcaption>试戴效果</figcaption>
-        <div class="cv-box effect-box">
-          <canvas id="effectCanvas" width="720" height="880"></canvas>
-          <img id="realRefImg" class="real-ref" alt="真人参考" hidden />
-        </div>
-      </figure>
-      <figure class="pv cmp-only" id="effectFigB" hidden>
-        <figcaption>对比 · <span id="curStyleNameB">—</span></figcaption>
-        <div class="cv-box effect-box">
-          <canvas id="effectCanvasB" width="720" height="880"></canvas>
-        </div>
-      </figure>
-    </div>
-
-    <p id="tryOnHint" class="hint cust-hint"></p>
-
-    <!-- 少量微调控件（贴合微调，紧凑横排） -->
-    <div class="fit-mini">
-      <div class="fit-head">
-        <span class="fit-title">✋ 贴合微调 <span class="fit-note">可单指拖动 / 双指缩放画面</span></span>
-        <button id="btnFitReset" class="ghost sm dark">↺ 重置</button>
+    <div class="about-grid reveal">
+      <div class="about-card glass-card reveal reveal-d1">
+        <div class="about-icon">🎯</div>
+        <h3>项目愿景</h3>
+        <p>让每一次理发都成为自信的选择。SmartHair AI 不是取代理发师，而是成为理发师与顾客之间的智能桥梁——用AI视觉识别降低沟通成本，用AR试戴消除决策焦虑。</p>
       </div>
-      <div class="fit-grid">
-        <label class="slider-lbl">大小 <span id="fitScaleVal">100%</span>
-          <input type="range" id="fitScale" min="0.7" max="1.4" step="0.01" value="1" /></label>
-        <label class="slider-lbl">左右 <span id="fitDxVal">0</span>
-          <input type="range" id="fitDx" min="-120" max="120" step="1" value="0" /></label>
-        <label class="slider-lbl">上下 <span id="fitDyVal">0</span>
-          <input type="range" id="fitDy" min="-120" max="120" step="1" value="0" /></label>
-        <label class="slider-lbl">旋转 <span id="fitRotVal">0°</span>
-          <input type="range" id="fitRot" min="-15" max="15" step="0.5" value="0" /></label>
-        <label class="slider-lbl wide-lbl">透明度 <span id="fitOpacityVal">100%</span>
-          <input type="range" id="fitOpacity" min="0.35" max="1" step="0.01" value="1" /></label>
+      <div class="about-card glass-card reveal reveal-d2">
+        <div class="about-icon">⚙️</div>
+        <h3>技术架构</h3>
+        <p>六层智能架构：采集层（WebRTC）→ AI视觉层（TensorFlow.js）→ 特征提取层 → 匹配推荐层（多权重打分）→ AR渲染层（Canvas+WebGL）→ 服务层（SaaS）</p>
+      </div>
+      <div class="about-card glass-card reveal reveal-d3">
+        <div class="about-icon">🔬</div>
+        <h3>核心算法</h3>
+        <p>多权重匹配引擎：脸型匹配度×40% + 肤色协调度×25% + 场景适配度×20% + 流行趋势×15%，综合打分推荐最优发型。</p>
+      </div>
+      <div class="about-card glass-card reveal reveal-d4">
+        <div class="about-icon">🚀</div>
+        <h3>未来规划</h3>
+        <p>3D发型建模、后脑勺识别、沙龙SaaS管理后台、顾客CRM系统、多门店数据看板、API/SDK开放集成。</p>
       </div>
     </div>
 
-    <!-- 温柔寄语（顾客侧情绪安抚） -->
-    <div class="warm-banner" aria-label="温柔寄语">
-      <span class="warm-icon">💛</span>
-      <p id="warmWord" class="warm-word"></p>
-      <button id="btnWarmNext" class="warm-next" title="换一句">换一句 ›</button>
+    <!-- 技术指标 -->
+    <div class="tech-specs reveal">
+      <h3 class="tech-title">技术指标</h3>
+      <div class="tech-grid">
+        <div class="tech-item glass-card">
+          <div class="tech-val">98.7%</div>
+          <div class="tech-lbl">脸型识别准确率</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:98.7%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">&lt;0.3s</div>
+          <div class="tech-lbl">AR渲染响应</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:96%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">68点</div>
+          <div class="tech-lbl">面部关键点检测</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:100%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">100%</div>
+          <div class="tech-lbl">本地隐私处理</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:100%"></div></div>
+        </div>
+      </div>
     </div>
-  </section>
-</main>
-
-<!-- ===================== 页面2：本店发型库 ===================== -->
-<main class="page page-library" id="page-library">
-  <div class="card">
-    <h2>📚 本店发型库 <span class="mini-note">共 <span id="dbCount">0</span> 款 · 点任意一款回工作台试戴</span></h2>
-    <div id="allGrid" class="grid grid-lib"></div>
   </div>
-</main>
+</section>
 
-<!-- ===================== 页面3：热门榜单 ===================== -->
-<main class="page page-popular" id="page-popular">
-  <div class="card">
-    <h2>🔥 本店热门发型榜单 <span class="mini-note">按人气热度排序</span></h2>
-    <div id="popularBox" class="rank-list"></div>
+<!-- ==================== CTA ==================== -->
+<section class="cta" id="demo">
+  <div class="container">
+    <div class="cta-card glass-card reveal">
+      <h2>准备好体验 AI 发型设计了吗？</h2>
+      <p>打开摄像头，3秒分析脸型，即刻查看最适合你的发型。</p>
+      <a href="/demo/" class="btn btn-primary btn-lg">
+        立即体验 Demo →
+      </a>
+      <p class="cta-note">无需安装 · 浏览器打开即用 · 照片不上传</p>
+    </div>
   </div>
-</main>
+</section>
 
-<!-- ===================== 页面4：季节专题 ===================== -->
-<main class="page page-season" id="page-season">
-  <div class="season-tabs" id="seasonTabs">
-    <button class="stab active" data-s="spring">🌸 春</button>
-    <button class="stab" data-s="summer">🌊 夏</button>
-    <button class="stab" data-s="autumn">🍂 秋</button>
-    <button class="stab" data-s="winter">❄️ 冬</button>
+<!-- ==================== 联系我们 ==================== -->
+<section class="section" id="contact">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">Contact</span>
+      <h2 class="section-title">联系我们</h2>
+      <p class="section-desc">对 SmartHair AI 感兴趣？欢迎交流与合作</p>
+    </div>
+
+    <div class="contact-grid reveal">
+      <div class="contact-info glass-card reveal reveal-d1">
+        <h3>获取更多信息</h3>
+        <p>无论是技术咨询、商务合作还是产品反馈，我们期待听到你的声音。</p>
+        <div class="contact-items">
+          <div class="contact-item">
+            <span class="contact-icon">📧</span>
+            <div><strong>邮箱</strong><p>contact@smarthair.ai</p></div>
+          </div>
+          <div class="contact-item">
+            <span class="contact-icon">💬</span>
+            <div><strong>反馈建议</strong><p>在产品 Demo 页面点击「反馈建议」</p></div>
+          </div>
+          <div class="contact-item">
+            <span class="contact-icon">🌐</span>
+            <div><strong>在线 Demo</strong><p><a href="/demo/" class="link">在线 Demo →</a></p></div>
+          </div>
+        </div>
+      </div>
+      <div class="contact-form glass-card reveal reveal-d2">
+        <h3>发送消息</h3>
+        <form id="contactForm">
+          <div class="form-group">
+            <label for="name">姓名</label>
+            <input type="text" id="name" placeholder="你的名字" required />
+          </div>
+          <div class="form-group">
+            <label for="email">邮箱</label>
+            <input type="email" id="email" placeholder="your@email.com" required />
+          </div>
+          <div class="form-group">
+            <label for="msg">留言</label>
+            <textarea id="msg" rows="4" placeholder="告诉我们你想了解什么..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">发送消息 →</button>
+        </form>
+      </div>
+    </div>
   </div>
-  <div class="card">
-    <div id="seasonHead" class="season-head"></div>
-    <div id="seasonBox" class="grid grid-lib"></div>
+</section>
+
+<!-- ==================== 页脚 ==================== -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="footer-logo">💈</span>
+      <span class="footer-name">SmartHair AI</span>
+      <p class="footer-desc">AI+AR 重新定义发型设计</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <strong>导航</strong>
+        <a href="#hero">首页</a>
+        <a href="#product">产品介绍</a>
+        <a href="#about">关于项目</a>
+        <a href="#contact">联系我们</a>
+      </div>
+      <div class="footer-col">
+        <strong>产品</strong>
+        <a href="/demo/">Demo 体验</a>
+        <a href="#product">功能介绍</a>
+        <a href="#about">技术架构</a>
+      </div>
+    </div>
   </div>
-</main>
-
-<!-- ===================== 页面5：方案存档 ===================== -->
-<main class="page page-archive" id="page-archive">
-  <div class="card">
-    <h2>🗂 方案存档 <span id="archStatus" class="mini-note"></span></h2>
-    <div id="archiveBox" class="arch-list"></div>
+  <div class="footer-bottom">
+    <p>© 2026 SmartHair AI · 让 AI 理解你的美</p>
   </div>
-</main>
+</footer>
 
-<footer class="foot">发型数据源自《收集表》· 渲染与人脸分析均在本地完成 · 后端仅存方案文本、绝不上传照片</footer>
-
-<!-- ===================== 移动端专用 UI ===================== -->
-<button class="mobile-fab" id="mobileFab" title="工具面板" aria-label="打开工具面板">✂</button>
-<div class="mobile-panel" id="mobilePanel">
-  <div class="panel-handle"></div>
-  <button class="panel-close" id="panelClose" aria-label="关闭面板">✕</button>
-  <div id="mobilePanelContent"></div>
-</div>
-
-<script src="js/face-api.min.js"></script>
-<script src="js/data.js"></script>
-<script src="js/hairmeta.js"></script>
-<script src="js/analysis.js"></script>
-<script src="js/store.js"></script>
-<script src="js/render.js"></script>
-<script src="js/app.js"></script>
 </body>
 </html>
