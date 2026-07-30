@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="SmartHair AI — AI+AR重新定义发型设计。3秒识别脸型与发质，多角度虚拟预览剪发效果。" />
+<title>SmartHair AI — AI+AR 智能发型设计</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="js/main.js" defer></script>
+</head>
+<body>
+
+<!-- ==================== 导航 ==================== -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#hero" class="nav-brand">
+      <span class="nav-logo">💈</span>
+      <span class="nav-name">SmartHair AI</span>
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#hero" class="nav-link active">首页</a>
+      <a href="#product" class="nav-link">产品介绍</a>
+      <a href="#about" class="nav-link">关于项目</a>
+      <a href="https://hair-mirror-eight.vercel.app" class="nav-link nav-link-cta" target="_blank" rel="noopener">Demo体验</a>
+      <a href="#contact" class="nav-link">联系我们</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="菜单">☰</button>
+  </div>
+</nav>
+
+<!-- ==================== Hero ==================== -->
+<section class="hero" id="hero">
+  <div class="hero-bg">
+    <div class="hero-orb hero-orb-1"></div>
+    <div class="hero-orb hero-orb-2"></div>
+    <div class="hero-orb hero-orb-3"></div>
+    <div class="hero-grid"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-badge reveal">
+      <span class="hero-badge-dot"></span> AI + AR 智能发型设计系统
+    </div>
+    <h1 class="hero-title reveal reveal-d1">
+      告别<span class="hero-highlight">「凭感觉」</span><br />
+      AI+AR重新定义发型设计
+    </h1>
+    <p class="hero-sub reveal reveal-d2">
+      3秒识别脸型与发质，多角度虚拟预览剪发效果<br />
+      顾客可视化选发型，理发师标准化施工
+    </p>
+    <div class="hero-actions reveal reveal-d3">
+      <a href="https://hair-mirror-eight.vercel.app" class="btn btn-primary" target="_blank" rel="noopener">
+        立即体验 Demo →
+      </a>
+      <a href="#product" class="btn btn-ghost">了解更多</a>
+    </div>
+    <div class="hero-stats reveal reveal-d4">
+      <div class="stat">
+        <div class="stat-num">98.7<span class="stat-unit">%</span></div>
+        <div class="stat-label">脸型识别准确率</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">&lt;0.3<span class="stat-unit">s</span></div>
+        <div class="stat-label">AR试戴响应速度</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">30<span class="stat-unit">+</span></div>
+        <div class="stat-label">智能发型款式库</div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-visual reveal reveal-d3">
+    <div class="hero-mockup">
+      <div class="mockup-screen">
+        <div class="mockup-dot"></div>
+        <div class="mockup-face">
+          <div class="mockup-ring mockup-ring-1"></div>
+          <div class="mockup-ring mockup-ring-2"></div>
+          <div class="mockup-icon">👤</div>
+        </div>
+        <div class="mockup-label">AI 面部分析中...</div>
+        <div class="mockup-bar"><div class="mockup-fill"></div></div>
+      </div>
+      <div class="mockup-card">
+        <div class="mockup-card-title">推荐发型</div>
+        <div class="mockup-card-row"><span>韩系云朵大波浪</span><span class="mockup-score">匹配92%</span></div>
+        <div class="mockup-card-row"><span>空气刘海黑长直</span><span class="mockup-score">匹配88%</span></div>
+        <div class="mockup-card-row"><span>日系蘑菇短</span><span class="mockup-score">匹配88%</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 产品介绍 ==================== -->
+<section class="section" id="product">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">Product</span>
+      <h2 class="section-title">AI+AR 发型设计全流程</h2>
+      <p class="section-desc">从顾客进店到完美发型，五步智能闭环</p>
+    </div>
+
+    <!-- 流程步骤 -->
+    <div class="flow reveal">
+      <div class="flow-line"></div>
+      <div class="flow-steps">
+        <div class="flow-step reveal reveal-d1">
+          <div class="flow-num">01</div>
+          <div class="flow-icon">📷</div>
+          <h4>采集人像</h4>
+          <p>顾客进店，摄像头实时采集面部图像，支持拍照或上传照片</p>
+        </div>
+        <div class="flow-step reveal reveal-d2">
+          <div class="flow-num">02</div>
+          <div class="flow-icon">🧠</div>
+          <h4>AI 分析</h4>
+          <p>68点面部关键点识别，精准判定脸型、肤色冷暖与发质类型</p>
+        </div>
+        <div class="flow-step reveal reveal-d3">
+          <div class="flow-num">03</div>
+          <div class="flow-icon">📊</div>
+          <h4>智能匹配</h4>
+          <p>多权重算法从30+发型数据库中匹配最适合顾客的款式</p>
+        </div>
+        <div class="flow-step reveal reveal-d4">
+          <div class="flow-num">04</div>
+          <div class="flow-icon">🎯</div>
+          <h4>生成方案</h4>
+          <p>输出三套优选方案，含避雷提示、打理指南与场景建议</p>
+        </div>
+        <div class="flow-step reveal reveal-d5">
+          <div class="flow-num">05</div>
+          <div class="flow-icon">👀</div>
+          <h4>AR 试戴</h4>
+          <p>多角度虚拟预览剪发效果，顾客可视化确认，理发师标准化施工</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 功能亮点 -->
+    <div class="features reveal">
+      <h3 class="features-title">核心能力</h3>
+      <div class="features-grid">
+        <div class="feature-card glass-card reveal reveal-d1">
+          <div class="feature-icon-wrap"><span class="feature-icon">🔍</span></div>
+          <h4>AI 视觉识别</h4>
+          <p>7种脸型精准分类 · 肤色LAB冷暖分析 · 发质纹理推断。全在浏览器本地完成，照片不上传。</p>
+          <div class="feature-tags">
+            <span>TensorFlow.js</span><span>Face-API</span><span>本地推理</span>
+          </div>
+        </div>
+        <div class="feature-card glass-card reveal reveal-d2">
+          <div class="feature-icon-wrap"><span class="feature-icon">🎨</span></div>
+          <h4>AR 虚拟试戴</h4>
+          <p>Canvas 2D + WebGL 混合渲染，实时色彩映射，五维贴合微调，多视角切换。</p>
+          <div class="feature-tags">
+            <span>实时渲染</span><span>发色调节</span><span>360°预览</span>
+          </div>
+        </div>
+        <div class="feature-card glass-card reveal reveal-d3">
+          <div class="feature-icon-wrap"><span class="feature-icon">📚</span></div>
+          <h4>智能发型库</h4>
+          <p>30+款精选发型，按风格/场景/难度分类，每款配打理指南与避雷提示。</p>
+          <div class="feature-tags">
+            <span>多维度筛选</span><span>打理指南</span><span>避雷提示</span>
+          </div>
+        </div>
+        <div class="feature-card glass-card reveal reveal-d4">
+          <div class="feature-icon-wrap"><span class="feature-icon">📋</span></div>
+          <h4>沟通卡片</h4>
+          <p>一键生成含效果图+发型参数的沟通卡片，消除顾客与理发师的理解偏差。</p>
+          <div class="feature-tags">
+            <span>效果图导出</span><span>方案存档</span><span>标准化施工</span>
+          </div>
+        </div>
+        <div class="feature-card glass-card reveal reveal-d5">
+          <div class="feature-icon-wrap"><span class="feature-icon">📱</span></div>
+          <h4>多端适配</h4>
+          <p>电脑/平板/手机全端支持，响应式布局，触控友好，适合理发店现场使用。</p>
+          <div class="feature-tags">
+            <span>响应式</span><span>触控优化</span><span>平板优先</span>
+          </div>
+        </div>
+        <div class="feature-card glass-card reveal reveal-d6">
+          <div class="feature-icon-wrap"><span class="feature-icon">🔒</span></div>
+          <h4>隐私安全</h4>
+          <p>人脸分析全程在浏览器本地完成，照片绝不上传服务器，保护顾客隐私。</p>
+          <div class="feature-tags">
+            <span>端侧推理</span><span>零上传</span><span>GDPR友好</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 关于项目 ==================== -->
+<section class="section section-alt" id="about">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">About</span>
+      <h2 class="section-title">关于 SmartHair AI</h2>
+      <p class="section-desc">用技术消除理发行业的不确定性</p>
+    </div>
+
+    <div class="about-grid reveal">
+      <div class="about-card glass-card reveal reveal-d1">
+        <div class="about-icon">🎯</div>
+        <h3>项目愿景</h3>
+        <p>让每一次理发都成为自信的选择。SmartHair AI 不是取代理发师，而是成为理发师与顾客之间的智能桥梁——用AI视觉识别降低沟通成本，用AR试戴消除决策焦虑。</p>
+      </div>
+      <div class="about-card glass-card reveal reveal-d2">
+        <div class="about-icon">⚙️</div>
+        <h3>技术架构</h3>
+        <p>六层智能架构：采集层（WebRTC）→ AI视觉层（TensorFlow.js）→ 特征提取层 → 匹配推荐层（多权重打分）→ AR渲染层（Canvas+WebGL）→ 服务层（SaaS）</p>
+      </div>
+      <div class="about-card glass-card reveal reveal-d3">
+        <div class="about-icon">🔬</div>
+        <h3>核心算法</h3>
+        <p>多权重匹配引擎：脸型匹配度×40% + 肤色协调度×25% + 场景适配度×20% + 流行趋势×15%，综合打分推荐最优发型。</p>
+      </div>
+      <div class="about-card glass-card reveal reveal-d4">
+        <div class="about-icon">🚀</div>
+        <h3>未来规划</h3>
+        <p>3D发型建模、后脑勺识别、沙龙SaaS管理后台、顾客CRM系统、多门店数据看板、API/SDK开放集成。</p>
+      </div>
+    </div>
+
+    <!-- 技术指标 -->
+    <div class="tech-specs reveal">
+      <h3 class="tech-title">技术指标</h3>
+      <div class="tech-grid">
+        <div class="tech-item glass-card">
+          <div class="tech-val">98.7%</div>
+          <div class="tech-lbl">脸型识别准确率</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:98.7%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">&lt;0.3s</div>
+          <div class="tech-lbl">AR渲染响应</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:96%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">68点</div>
+          <div class="tech-lbl">面部关键点检测</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:100%"></div></div>
+        </div>
+        <div class="tech-item glass-card">
+          <div class="tech-val">100%</div>
+          <div class="tech-lbl">本地隐私处理</div>
+          <div class="tech-bar"><div class="tech-fill" style="width:100%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== CTA ==================== -->
+<section class="cta" id="demo">
+  <div class="container">
+    <div class="cta-card glass-card reveal">
+      <h2>准备好体验 AI 发型设计了吗？</h2>
+      <p>打开摄像头，3秒分析脸型，即刻查看最适合你的发型。</p>
+      <a href="https://hair-mirror-eight.vercel.app" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
+        立即体验 Demo →
+      </a>
+      <p class="cta-note">无需安装 · 浏览器打开即用 · 照片不上传</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 联系我们 ==================== -->
+<section class="section" id="contact">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-tag">Contact</span>
+      <h2 class="section-title">联系我们</h2>
+      <p class="section-desc">对 SmartHair AI 感兴趣？欢迎交流与合作</p>
+    </div>
+
+    <div class="contact-grid reveal">
+      <div class="contact-info glass-card reveal reveal-d1">
+        <h3>获取更多信息</h3>
+        <p>无论是技术咨询、商务合作还是产品反馈，我们期待听到你的声音。</p>
+        <div class="contact-items">
+          <div class="contact-item">
+            <span class="contact-icon">📧</span>
+            <div><strong>邮箱</strong><p>contact@smarthair.ai</p></div>
+          </div>
+          <div class="contact-item">
+            <span class="contact-icon">💬</span>
+            <div><strong>反馈建议</strong><p>在产品 Demo 页面点击「反馈建议」</p></div>
+          </div>
+          <div class="contact-item">
+            <span class="contact-icon">🌐</span>
+            <div><strong>在线 Demo</strong><p><a href="https://hair-mirror-eight.vercel.app" target="_blank" rel="noopener" class="link">hair-mirror-eight.vercel.app</a></p></div>
+          </div>
+        </div>
+      </div>
+      <div class="contact-form glass-card reveal reveal-d2">
+        <h3>发送消息</h3>
+        <form id="contactForm">
+          <div class="form-group">
+            <label for="name">姓名</label>
+            <input type="text" id="name" placeholder="你的名字" required />
+          </div>
+          <div class="form-group">
+            <label for="email">邮箱</label>
+            <input type="email" id="email" placeholder="your@email.com" required />
+          </div>
+          <div class="form-group">
+            <label for="msg">留言</label>
+            <textarea id="msg" rows="4" placeholder="告诉我们你想了解什么..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">发送消息 →</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 页脚 ==================== -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="footer-logo">💈</span>
+      <span class="footer-name">SmartHair AI</span>
+      <p class="footer-desc">AI+AR 重新定义发型设计</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <strong>导航</strong>
+        <a href="#hero">首页</a>
+        <a href="#product">产品介绍</a>
+        <a href="#about">关于项目</a>
+        <a href="#contact">联系我们</a>
+      </div>
+      <div class="footer-col">
+        <strong>产品</strong>
+        <a href="https://hair-mirror-eight.vercel.app" target="_blank" rel="noopener">Demo 体验</a>
+        <a href="#product">功能介绍</a>
+        <a href="#about">技术架构</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© 2026 SmartHair AI · 让 AI 理解你的美</p>
+  </div>
+</footer>
+
+</body>
+</html>
