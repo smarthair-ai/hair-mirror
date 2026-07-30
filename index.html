@@ -57,6 +57,12 @@
   <div class="top-right">
     <span id="backendDot" class="be-dot" title="后端状态">●</span>
     <span class="privacy">🔒 人脸仅本机处理</span>
+    <button class="navmore" id="btnNavMore" title="更多" aria-label="更多菜单">⋮</button>
+    <div class="navmore-menu" id="navMoreMenu">
+      <button class="mi" id="miStatus"><span class="dot" id="miDot"></span> <span id="miStatusText">后端在线</span></button>
+      <button class="mi" id="miPrivacy">🔒 隐私说明</button>
+      <button class="mi" id="miFeedback">💬 反馈建议</button>
+    </div>
   </div>
 </header>
 
@@ -338,6 +344,14 @@
 </main>
 
 <footer class="foot">发型数据源自《收集表》· 渲染与人脸分析均在本地完成 · 后端仅存方案文本、绝不上传照片</footer>
+
+<!-- ===================== 移动端专用 UI ===================== -->
+<button class="mobile-fab" id="mobileFab" title="工具面板" aria-label="打开工具面板">✂</button>
+<div class="mobile-panel" id="mobilePanel">
+  <div class="panel-handle"></div>
+  <button class="panel-close" id="panelClose" aria-label="关闭面板">✕</button>
+  <div id="mobilePanelContent"></div>
+</div>
 
 <script src="js/face-api.min.js"></script>
 <script src="js/data.js"></script>
