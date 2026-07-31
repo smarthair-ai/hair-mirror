@@ -5,7 +5,7 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-07-31T18:45+08:00';
+  const BUILD_VERSION = '2026-07-31T19:01+08:00';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
 
@@ -866,7 +866,8 @@
     const meta = photoHairMeta(styleId);
     const rec = metaUsable(meta) ? getHairImg(styleId) : null;
     const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
-    // 平滑关键点：检测成功时 raw=_rtLandmarks；检测失败/短暂丢脸时 _rtLandmarks 保留上一帧 → 发型不瞬间错位
+    // [AR-DEBUG] ⑤ 双阶滤波·第一阶：平滑关键点(drawLM)与包围盒(drawBox)。
+    //   检测成功时 raw=_rtLandmarks；检测失败/短暂丢脸时 _rtLandmarks 保留上一帧 → 发型不瞬间错位。
     const drawLM = (_rtLandmarks && _rtLandmarks.length >= 68) ? smoothLandmarks(_rtLandmarks) : null;
     const drawBox = (_rtBox) ? smoothBox(_rtBox) : null;   // 平滑包围盒（自适应缩放用）
     try{

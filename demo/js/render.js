@@ -1033,6 +1033,8 @@ function renderPhotoTryOn(canvas, opts){
 const AR_TUNE = {
   VERTICAL_OFFSET: 0,    // ★ 上下偏移(px)：正=下移，负=上移（发型锚点相对颅顶）
   SCALE_BOOST: 1.0,      // ★ 基础缩放倍率：整体缩放微调，与 UI“大小”滑块、每款 arScale 叠加
+  SCALE_MIN: 0.45,       // ★ 缩放下限：防极端远端发型过小
+  SCALE_MAX: 2.20,       // ★ 缩放上限：防极端近端发型过大
   HEADTOP_RATIO: 0.58,   // 头顶外推比例（眉→头顶 / 眉→下巴）。圆脸↓ 长脸↑
   TEMPLE_FACTOR: 1.0,    // ★ 横向补偿（鬓角宽度贴合系数）：>1 略宽，<1 略窄
   YAW_STRENGTH: 0.18,    // 左右转头(yaw)横向压缩强度（0=不跟转，0.25=明显跟转）
@@ -1043,8 +1045,8 @@ const AR_TUNE = {
 function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, videoH, box){
   if(!landmarks || landmarks.length < 68 || !meta || !meta.eyeL || !meta.eyeR) return null;
 
-  // ★ 把视频原生坐标(如1280x960)的关键点映射到画布坐标(720x880) ——
-  //   视频被拉伸铺满画布，不映射会导致发型整体偏移/缩放错位
+  // [AR-DEBUG] ① 坐标映射：视频原生坐标(如1280x960) → 画布坐标(720x880)。
+  //   视频被拉伸铺满画布，不映射会导致发型整体偏移/缩放错位。L 即映射后的关键点。
   const vsx = (videoW && videoW > 1) ? canvasW / videoW : 1;
   const vsy = (videoH && videoH > 1) ? canvasH / videoH : 1;
   const L = landmarks.map(p => ({ x: p.x * vsx, y: p.y * vsy }));
@@ -1065,14 +1067,16 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
   const coverage = meta.coverage || 0.25;
   const coverageScale = 1.06 + Math.max(0, (0.30 - coverage) * 0.5);
   const scaleBoost = AR_TUNE.SCALE_BOOST * (meta.arScale != null && isFinite(meta.arScale) ? meta.arScale : 1);
-  // 头部尺寸（自适应缩放）：双眼距 + 人脸包围盒 双信号 → 远近/头型自适应
-  //   box 为视频坐标人脸包围盒；srcBoxW 为素材发型包围盒宽；比值与坐标空间无关
+  // [AR-DEBUG] ② 自适应缩放核心：双眼距(头型) + 人脸包围盒(远近) 双信号实时算头部像素尺寸。
+  //   box.width = 视频坐标人脸包围盒宽；srcBoxW = 素材发型包围盒宽；比值与坐标空间无关。
+  //   人物靠近→box变大→scaleFromBox变大→发型放大；远离→变小。逐帧动态更新。
   const srcBoxW = (meta.box && meta.box[2] > meta.box[0]) ? (meta.box[2] - meta.box[0]) : null;
   const scaleFromEye = dDist / sDist;
   let scaleFromBox = scaleFromEye;
   if(box && box.width && srcBoxW){ scaleFromBox = box.width / srcBoxW; } // 顾客头宽 / 素材头宽 = 距离自适应缩放比
   const sizeRatio = srcBoxW ? (0.5 * scaleFromEye + 0.5 * scaleFromBox) : scaleFromEye;
-  const scale = sizeRatio * coverageScale * scaleBoost;
+  // [AR-DEBUG] 缩放上下限钳制：防极端距离下发型过大/过小
+  const scale = _clamp(sizeRatio * coverageScale * scaleBoost, AR_TUNE.SCALE_MIN, AR_TUNE.SCALE_MAX);
 
   // 旋转：双眼倾角差（跟随头部左右倾斜 roll）
   const angle = Math.atan2(dR.y - dL.y, dR.x - dL.x) - Math.atan2(sR.y - sL.y, sR.x - sL.x);
@@ -1124,6 +1128,8 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
   const finalScale = scale * uScale;
 
   // ④+++ 基础相似变换（双眼对齐 + 自动适配，暂不含手动偏移）
+  // [AR-DEBUG] ④ 最终变换矩阵 T：dx/dy=平移(锚点位置)，sx/sy=缩放(含自适应scale+脸型fitX/fitY+俯仰)，angle=旋转(roll+yaw/pitch)。
+  //   发型贴图即以 T 映射到画布：先平移到锚点→旋转→缩放→回退源锚点→绘制。
   const T = {
     dx: dM.x, dy: dM.y, angle: angle,
     sx: finalScale * fitX * yawComp,                 // 叠加 yaw 横向压缩
@@ -1142,7 +1148,8 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
     let targetTop, targetCx, refH, refW, full;
     if(a){
       refH = a.faceH; refW = a.faceW;
-      // ★ 发顶锁头顶 + 纵向微调（AR_TUNE.VERTICAL_OFFSET 全局，meta.arDy 每款发型单独覆盖）
+      // [AR-DEBUG] ③ 锚点锁定颅顶：targetTop 由预估颅顶点(a.headTop = 眉上外推) 决定，
+      //   再叠加 VERTICAL_OFFSET / 每款 arDy → 发型落在头顶区域，不盖脸。
       targetTop = a.headTop - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET + (meta.arDy != null ? meta.arDy : 0);
       targetCx  = a.headCx;                 // 真实人头中线（鬓角中点为主）
       full = 1;                             // 完全对齐，严格跟随人头
@@ -1184,6 +1191,8 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
 let _hairTSmooth = null;
 const _T_SMOOTH = 0.30;   // 越小越稳（抗抖动），越大越跟手
 function resetHairSmoothing(){ _hairTSmooth = null; }
+// [AR-DEBUG] ⑥ 双阶滤波·第二阶：对变换参数(dx/dy/sx/sy/angle)再做指数平滑，
+//   抑制“人物轻微晃动时发型忽大忽小、剧烈漂移”。首帧/重置时直接吸附。
 function smoothTransform(T){
   if(!T) return null;
   if(!_hairTSmooth){
@@ -1216,14 +1225,16 @@ function renderRealtimeAR(canvas, opts){
   ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
   // ② 有发型且有关键点 → 叠加发型贴图（landmarks 为视频原生坐标，buildRealtimeTransform 内部映射到画布坐标）
   if(opts.landmarks && opts.hairImg && opts.hairMeta){
-    // 第一阶：关键点/包围盒已在 app.js 平滑；此处算出原始变换
+    // [AR-DEBUG] ⑦ 第一阶：关键点/包围盒已在 app.js 平滑；此处算出原始变换 T0。
     const T0 = buildRealtimeTransform(opts.landmarks, opts.hairMeta, W, H, opts.fit, vw, vh, opts.box);
-    // 第二阶：对变换参数再做指数平滑 → 消除忽大忽小/剧烈抖动
+    // [AR-DEBUG] ⑧ 第二阶：对变换参数再做指数平滑 → 消除忽大忽小/剧烈抖动。
     const T = (T0 && T0.valid) ? smoothTransform(T0) : null;
     if(T){
       const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|'+opts.hairImg.src, 2.5);
       const op = (opts.fit && opts.fit.opacity != null && isFinite(opts.fit.opacity)) ? _clamp(opts.fit.opacity, 0.2, 1) : 1;
       ctx.globalAlpha = op;
+      // [AR-DEBUG] ⑨ 发型最终绘制：以 T 把发型 PNG(原点在左上) 映射到画布锚点。若发型偏大/偏小/偏位，
+      //   优先调 AR_TUNE.SCALE_BOOST / VERTICAL_OFFSET / TEMPLE_FACTOR 或对应款式 arScale/arDy/arDx。
       ctx.translate(T.dx, T.dy);
       ctx.rotate(T.angle);
       ctx.scale(T.sx, T.sy);
