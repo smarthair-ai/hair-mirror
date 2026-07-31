@@ -151,6 +151,7 @@ const FaceAnalyzer = (() => {
       skinColor: skin.color,
       metrics,
       landmarks: pts,
+      confidence: detection.detection ? detection.detection.score : null, // 人脸检测置信度（0~1），用于过滤弱识别
       genderEstimate: genderEst  // { gender, confidence, method }
     };
   }
