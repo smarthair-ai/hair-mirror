@@ -1002,44 +1002,125 @@ function renderPhotoTryOn(canvas, opts){
 
 // 实时帧的轻量 T 矩阵（跳过二次精修 + 鬓角对位，只做双眼对齐）
 function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, videoH){
-  if(!landmarks || landmarks.length < 68 || !meta || !meta.eyeL) return null;
-  // 顾客双眼位置（68关键点，与 video 原始尺寸对齐）
-  const e = eyeCentersFromLandmarks(landmarks);
-  const dL = { x: e.L.x, y: e.L.y };
-  const dR = { x: e.R.x, y: e.R.y };
-  // 源发型双眼锚点
+  if(!landmarks || landmarks.length < 68 || !meta || !meta.eyeL || !meta.eyeR) return null;
+
+  // ★ 把视频原生坐标(如1280x960)的关键点映射到画布坐标(720x880) ——
+  //   视频被拉伸铺满画布，不映射会导致发型整体偏移/缩放错位
+  const vsx = (videoW && videoW > 1) ? canvasW / videoW : 1;
+  const vsy = (videoH && videoH > 1) ? canvasH / videoH : 1;
+  const L = landmarks.map(p => ({ x: p.x * vsx, y: p.y * vsy }));
+
+  // 顾客双眼位置（已转换到画布坐标）
+  const e = eyeCentersFromLandmarks(L);
+  const dL = e.L, dR = e.R;
+  // 源发型双眼锚点（离线检测，PNG 素材坐标系）
   const sL = { x: meta.eyeL[0], y: meta.eyeL[1] };
   const sR = { x: meta.eyeR[0], y: meta.eyeR[1] };
-  // 双眼间距
+
+  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿
   const dDist = Math.hypot(dR.x - dL.x, dR.y - dL.y);
   const sDist = Math.max(1, Math.hypot(sR.x - sL.x, sR.y - sL.y));
-  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿
   const coverage = meta.coverage || 0.25;
   const coverageScale = 1.06 + Math.max(0, (0.30 - coverage) * 0.5);
   const scale = (dDist / sDist) * coverageScale;
-  // 旋转：双眼倾角差
+
+  // 旋转：双眼倾角差（跟随头部左右倾斜 roll）
   const angle = Math.atan2(dR.y - dL.y, dR.x - dL.x) - Math.atan2(sR.y - sL.y, sR.x - sL.x);
-  // 双眼中点
+
   const dM = { x: (dL.x + dR.x) / 2, y: (dL.y + dR.y) / 2 };
   const sM = { x: (sL.x + sR.x) / 2, y: (sL.y + sR.y) / 2 };
+
+  // —— 人脸自动适配：按“脸宽/眼距”“脸长/眼距”“额头高度”做各向异性微调（宽脸加宽、长脸拉长、高额头拉高）——
+  let fitX = 1, fitY = 1, foreheadMul = 1;
+  if(meta.face){
+    const a = computeAnchorsFromLandmarks(L);
+    const jaw = L.slice(0, 17);
+    let minX = Infinity, maxX = -Infinity;
+    jaw.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); });
+    const browTopY = Math.min(...L.slice(17, 27).map(p => p.y));
+    const dFaceW = maxX - minX;                    // 顾客颧-颌最大宽
+    const dFaceH = L[8].y - browTopY;              // 顾客眉-颏高
+    const dForeheadH = browTopY - (browTopY - dFaceH * 0.62);
+    const dTempleW = a ? a.templeW : dFaceW * 0.94;
+    const wRatio = (dTempleW / dDist) / ((meta.face[2] / 1.06) / sDist);
+    const hRatio = ((dFaceH * 1.22) / dDist) / (meta.face[3] / sDist);
+    fitX = _clamp(wRatio, 0.86, 1.18);
+    fitY = _clamp(hRatio, 0.86, 1.18);
+    // 高额头补偿：顾客额头比素材高时，纵向上拉头发覆盖区
+    const srcForeheadH = meta.h * 0.62 * (meta.face[3] / Math.max(1, meta.h));
+    const fhRatio = dForeheadH / Math.max(1, srcForeheadH);
+    foreheadMul = _clamp(fhRatio, 0.92, 1.15);
+  }
+
+  // 长短滑块（实时模式固定中性 0.5）
+  const syMul = 0.92 + 0.5 * 0.18;
+
   // 手动微调
   const f = fit || {};
-  const uScale = (f.scale != null && isFinite(f.scale)) ? Math.min(1.8, Math.max(0.5, f.scale)) : 1;
-  const uDx = f.dx || 0;
-  const uDy = f.dy || 0;
-  const uRot = f.rot || 0;
+  const uScale = (f.scale != null && isFinite(f.scale)) ? _clamp(f.scale, 0.5, 1.8) : 1;
+  const uDx = f.dx || 0, uDy = f.dy || 0, uRot = f.rot || 0;
   const finalScale = scale * uScale;
-  return {
-    dx: dM.x + uDx,
-    dy: dM.y + uDy,
-    angle: angle + uRot,
-    sx: finalScale,
-    sy: finalScale, // 实时模式简化：等比缩放
-    ox: sM.x,
-    oy: sM.y,
-    // 用于判断是否有效
-    valid: dDist > 10 && scale > 0.1 && scale < 8
+
+  // ④+++ 基础相似变换（双眼对齐 + 自动适配，暂不含手动偏移）
+  const T = {
+    dx: dM.x, dy: dM.y, angle: angle,
+    sx: finalScale * fitX,
+    sy: finalScale * fitY * syMul * foreheadMul,
+    ox: sM.x, oy: sM.y
   };
+
+  // —— 人头锚点自动对齐：以【顾客真实人头】为摆放基准（头顶 + 左右鬓角）——
+  //    发顶锁到估算头顶(headTop)，中线锁到真实人头中线(headCx)，消除垂直过高/过低与左右脱离头部
+  if(meta.box){
+    const bx0 = meta.box[0], by0 = meta.box[1], bx1 = meta.box[2];
+    const bcx = (bx0 + bx1) / 2;
+    const hairTopY = T.dy + (by0 - T.oy) * T.sy;   // 变换后的发顶 Y
+    const hairCx   = T.dx + (bcx - T.ox) * T.sx;   // 变换后的发型中线 X
+    const a = computeAnchorsFromLandmarks(L);
+    let targetTop, targetCx, refH, refW, full;
+    if(a){
+      refH = a.faceH; refW = a.faceW;
+      targetTop = a.headTop - refH * 0.03;  // 发顶略高于颅顶（头发蓬度）
+      targetCx  = a.headCx;                 // 真实人头中线（鬓角中点为主）
+      full = 1;                             // 完全对齐，严格跟随人头
+    }else{
+      refH = canvasH * 0.30; refW = canvasW * 0.40;
+      targetTop = canvasH * 0.16 - refH * 0.03;
+      targetCx  = canvasW / 2;
+      full = 0.82;
+    }
+    T.dy += _clamp((targetTop - hairTopY) * full, -refH * 1.60, refH * 1.60);
+    T.dx += _clamp((targetCx  - hairCx)  * full, -refW * 1.60, refW * 1.60);
+    // 鬓角二次对位：把发型左右外缘按顾客鬓角连线做精修，消除单侧偏移
+    if(a){
+      const hairHalfW = ((bx1 - bx0) / 2) * T.sx;
+      const wantHalfW = (a.templeW / 2) * (1 + Math.max(0, (0.34 - coverage) * 0.7));
+      const kw = _clamp(wantHalfW / Math.max(1, hairHalfW), 0.90, 1.12);
+      if(Math.abs(kw - 1) > 0.01){
+        T.sx *= kw;
+        T.dx = targetCx - (bcx - T.ox) * T.sx;
+      }
+      // 头顶再锁一次（保证与 headTop 严格对齐）
+      T.dy += (targetTop - (T.dy + (by0 - T.oy) * T.sy));
+    }
+  }
+
+  // —— 水平转动（yaw）轻量适配：转头时发型横向轻微压缩，跟随左右转动 ——
+  {
+    const nose = L[30], lj = L[0], rj = L[16];
+    const dLx = Math.abs(nose.x - lj.x), dRx = Math.abs(nose.x - rj.x);
+    const yawRaw = (dRx - dLx) / Math.max(1, (dLx + dRx));
+    const yaw = _clamp(yawRaw, -0.6, 0.6);
+    const yawComp = _clamp(1 - 0.16 * Math.abs(yaw), 0.85, 1.0);
+    T.sx *= yawComp;
+  }
+
+  // 手动微调（上下偏移 / 左右偏移 / 旋转）叠加在自动贴合之上
+  T.dx += uDx; T.dy += uDy; T.angle += uRot;
+
+  T.valid = isFinite(dDist) && dDist > 10 && scale > 0.1 && scale < 8
+            && isFinite(T.dx) && isFinite(T.dy) && isFinite(T.sx) && isFinite(T.sy);
+  return T;
 }
 
 // 实时 AR 渲染：将发型 PNG 叠加到视频帧上
@@ -1048,59 +1129,28 @@ function renderRealtimeAR(canvas, opts){
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  if(!opts.video || !opts.landmarks || !opts.hairImg || !opts.hairMeta) return;
-  // ① 绘制视频帧（镜像翻转，与摄像头预览一致）
-  ctx.save();
-  ctx.translate(W, 0); ctx.scale(-1, 1);
+  if(!opts.video) return;
   const vw = opts.video.videoWidth || W;
   const vh = opts.video.videoHeight || H;
-  ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
-  ctx.restore();
-  // ② 构建实时变换矩阵
-  const T = buildRealtimeTransform(opts.landmarks, opts.hairMeta, W, H, opts.fit, vw, vh);
-  if(!T || !T.valid) return; // 无人脸或变换无效，仅显示视频
-  // ③ 构建/获取发色精灵（利用缓存）
-  const spriteKey = 'realtime|'+opts.hairImg.src;
-  const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, spriteKey);
-  // ④ 离屏绘制发型层
-  const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
-  const lx = layer.getContext('2d');
-  lx.drawImage(sprite, 0, 0);
-  // ⑤ 应用变换：平移→旋转→缩放→平移（与 renderPhotoTryOn 相同的 applyHairTransform）
-  // 但这里直接内联实现，因为 applyHairTransform 依赖全局 ctx 状态
-  // ⑥ 在 canvas 上叠加发型
+  // ① 进入镜像上下文：视频与发型都在同一镜像空间绘制 → 左右严格对齐，消除左右翻转错位
   ctx.save();
-  // 变换：将源图片坐标映射到 canvas 坐标
-  // 先移动到目标位置，然后旋转缩放，再减去源锚点偏移
-  const sw = opts.hairMeta.w, sh = opts.hairMeta.h;
-  ctx.translate(T.dx, T.dy);
-  ctx.rotate(T.angle);
-  ctx.scale(T.sx, T.sy);
-  ctx.translate(-T.ox, -T.oy);
-  // 画出发型（仅 alpha>0 的像素有效，因为 PNG 已抠图）
-  ctx.drawImage(sprite, 0, 0, sw, sh);
-  ctx.restore();
-  // ⑦ 简单边缘羽化（仅在发型层做一个 soft clip）
-  // 用视频帧的头发区域做 mask 减少突兀感（简化版）
-  // ⑧ 透明度
-  if(opts.fit && opts.fit.opacity != null && opts.fit.opacity < 1){
-    ctx.save();
-    ctx.globalAlpha = opts.fit.opacity;
-    // 重绘发型（因为上面的 drawImage 已经画了，这里只是加透明度不够理想，
-    // 但我们用简单方式：先清空再画）
-    ctx.clearRect(0, 0, W, H);
-    // 重新画视频帧
-    ctx.save();
-    ctx.translate(W, 0); ctx.scale(-1, 1);
-    ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
-    ctx.restore();
-    // 画发型
-    ctx.translate(T.dx, T.dy);
-    ctx.rotate(T.angle);
-    ctx.scale(T.sx, T.sy);
-    ctx.translate(-T.ox, -T.oy);
-    ctx.globalAlpha = opts.fit.opacity;
-    ctx.drawImage(sprite, 0, 0, sw, sh);
-    ctx.restore();
+  ctx.translate(W, 0); ctx.scale(-1, 1);
+  // 视频帧（按画布比例拉伸铺满）
+  ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
+  // ② 有发型且有关键点 → 叠加发型贴图（landmarks 为视频原生坐标，buildRealtimeTransform 内部映射到画布坐标）
+  if(opts.landmarks && opts.hairImg && opts.hairMeta){
+    const T = buildRealtimeTransform(opts.landmarks, opts.hairMeta, W, H, opts.fit, vw, vh);
+    if(T && T.valid){
+      const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|'+opts.hairImg.src);
+      const op = (opts.fit && opts.fit.opacity != null && isFinite(opts.fit.opacity)) ? _clamp(opts.fit.opacity, 0.2, 1) : 1;
+      ctx.globalAlpha = op;
+      ctx.translate(T.dx, T.dy);
+      ctx.rotate(T.angle);
+      ctx.scale(T.sx, T.sy);
+      ctx.translate(-T.ox, -T.oy);
+      ctx.drawImage(sprite, 0, 0, opts.hairMeta.w, opts.hairMeta.h);
+      ctx.globalAlpha = 1;
+    }
   }
+  ctx.restore();
 }

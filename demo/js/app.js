@@ -788,11 +788,14 @@
   /* ---------- 实时 AR 跟踪循环 ---------- */
   let _rtTimer = null;           // requestAnimationFrame ID
   let _rtRunning = false;        // 是否正在运行
-  let _rtLandmarks = null;       // 最新检测到的68关键点
+  let _rtLandmarks = null;       // 最新检测到的68关键点（视频原生坐标）
+  let _rtSmoothLM = null;        // 指数平滑后的关键点（消除抖动/检测波动造成的发型剧烈晃动）
   let _rtLastDetect = 0;        // 上次检测时间戳
   let _rtNoFace = 0;             // 连续未检到人脸的帧计数（用于软提示）
-  // 移动端放宽检测频率以省算力（桌面 5fps，移动 3.3fps）
-  const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 300 : 200;
+  // 平滑系数：越大越跟手，越小越稳（抗抖动）。0.35 在跟随性与稳定性间取得平衡
+  const _RT_SMOOTH = 0.35;
+  // 检测频率：桌面 ~7.7fps，移动 ~4.5fps（比旧版更频繁 → 小幅度转头/侧脸跟踪更连续）
+  const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 220 : 130;
 
   // 检测困难时的软提示（不阻断流程）
   function suggestFaceHint(){
@@ -807,6 +810,7 @@
     if(_rtRunning) return;
     _rtRunning = true;
     _rtNoFace = 0;
+    _rtSmoothLM = null;   // 重置平滑缓存，首帧直接贴合（避免从上次残留位置滑入）
     const rc = $('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
     $('camHint').textContent = '正对摄像头，发型实时跟随中';
     _rtTick();
@@ -815,6 +819,21 @@
     _rtRunning = false;
     if(_rtTimer){ cancelAnimationFrame(_rtTimer); _rtTimer = null; }
     // 注意：不再隐藏/清空 realtimeCanvas —— 它是唯一试戴画布，照片/手动模式下仍需显示。
+  }
+  // 对关键点做指数平滑（EMA）：每帧把平滑值朝最新检测值挪 _RT_SMOOTH 比例，
+  // 既保留跟随性，又滤掉单帧检测噪声 → 发型不会因画面抖动而剧烈晃动
+  function smoothLandmarks(raw){
+    if(!raw || raw.length < 68) return null;
+    if(!_rtSmoothLM || _rtSmoothLM.length !== raw.length){
+      _rtSmoothLM = raw.map(p => ({ x: p.x, y: p.y }));
+      return _rtSmoothLM;
+    }
+    const a = _RT_SMOOTH;
+    for(let i = 0; i < raw.length; i++){
+      _rtSmoothLM[i].x += (raw[i].x - _rtSmoothLM[i].x) * a;
+      _rtSmoothLM[i].y += (raw[i].y - _rtSmoothLM[i].y) * a;
+    }
+    return _rtSmoothLM;
   }
   function _rtTick(){
     if(!_rtRunning) return;
@@ -827,12 +846,14 @@
     const meta = photoHairMeta(styleId);
     const rec = metaUsable(meta) ? getHairImg(styleId) : null;
     const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
+    // 平滑关键点：检测成功时 raw=_rtLandmarks；检测失败/短暂丢脸时 _rtLandmarks 保留上一帧 → 发型不瞬间错位
+    const drawLM = (_rtLandmarks && _rtLandmarks.length >= 68) ? smoothLandmarks(_rtLandmarks) : null;
     try{
-      if(canHair){
+      if(canHair && drawLM){
         // 渲染实时 AR：视频 + 发型贴图跟随头部
         renderRealtimeAR(rc, {
           video: v,
-          landmarks: _rtLandmarks,  // 可能为 null → 函数内会跳过发型绘制
+          landmarks: drawLM,
           hairImg: rec.img,
           hairMeta: meta,
           colorId: STATE.colorId,
@@ -840,7 +861,7 @@
           fit: STATE.fit
         });
       }else{
-        // 仅显示镜像视频画面（无发型贴图 / 未开启真人试发）
+        // 仅显示镜像视频画面（无发型贴图 / 未开启真人试发 / 暂无人脸）
         const ctx = rc.getContext('2d');
         ctx.clearRect(0,0,rc.width,rc.height);
         ctx.save(); ctx.translate(rc.width,0); ctx.scale(-1,1);
@@ -854,11 +875,14 @@
       _rtDetectFace(v);
     }
   }
+  let _rtDetecting = false;      // 防止检测回调堆积（避免慢设备上面部识别并发占用）
   async function _rtDetectFace(v){
     if(typeof FaceAnalyzer === 'undefined') return;
+    if(_rtDetecting) return;     // 上一次检测尚未完成，跳过本次，避免重复占用
+    _rtDetecting = true;
     try{
       await FaceAnalyzer.init();
-    }catch(e){ return; }
+    }catch(e){ _rtDetecting = false; return; }
     try{
       const res = await FaceAnalyzer.analyze(v);
       if(res && res.landmarks && res.landmarks.length >= 68){
@@ -900,6 +924,7 @@
         suggestFaceHint();
       }
     }
+    _rtDetecting = false;   // 释放检测锁，允许下一周期继续追踪
   }
 
   /* ---------- 自动检测人脸 ---------- */
