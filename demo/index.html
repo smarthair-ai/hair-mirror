@@ -331,5 +331,9 @@
 <script src="js/store.js"></script>
 <script src="js/render.js"></script>
 <script src="js/app.js"></script>
+<!-- MediaPipe FaceMesh（468点 + 3D姿态矩阵）：ES Module，异步加载，
+     加载完成后挂载 window.MPFace，由 app.js 轮询接管为主追踪引擎；
+     若 CDN 被墙/不可达则自动降级 face-api 68 点，页面功能不受影响。 -->
+<script type="module" src="js/mpface.js"></script>
 </body>
 </html>

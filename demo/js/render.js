@@ -1012,191 +1012,267 @@ function renderPhotoTryOn(canvas, opts){
  * 轻量版：跳过精修步骤（光照匹配/碎发回融/接触阴影），保证 15fps+
  * ========================================================================= */
 
-// 实时帧的轻量 T 矩阵（跳过二次精修 + 鬓角对位，只做双眼对齐）
 /* =========================================================================
- * 实时 AR 发型变换 —— 核心可调参数集中在这里（AR_TUNE）
+ * 【AR 贴合引擎 v2】全新策略 —— MediaPipe FaceMesh 驱动的头部绑定
  * -------------------------------------------------------------------------
- * 坐标系：landmarks 为视频原生像素，本函数先映射到画布坐标(720x880)再计算；
- *        视频被拉伸铺满画布，不映射会导致整体偏移/缩放错位。
- * 生物特征锚点：face-api 输出 68 关键点（项目未集成 MediaPipe 468，故用 68 点
- *        充分覆盖：左右太阳穴=0/16，额头中点=27，头顶=眉上外推，下颌=8/下巴轮廓）。
- * ★ 你要微调的“发型偏移/缩放”入口（改这里即可适配不同长短发型）：
- *   - VERTICAL_OFFSET : 发型相对头顶的纵向偏移(px，画布坐标)。正=下移，负=上移。
- *   - SCALE_BOOST     : 整体缩放微调，与 UI“大小”滑块叠加（>1 放大）。
- *   - HEADTOP_RATIO   : 头顶外推比例（眉→头顶 / 眉→下巴）。圆脸调小、长脸调大。
- *   - TEMPLE_FACTOR   : 鬓角宽度贴合系数（1=正好贴合，>1 略宽）。
- *   - YAW_STRENGTH    : 左右转头(yaw)横向压缩强度（跟转头）。
- *   - PITCH_STRENGTH  : 抬头/低头(pitch)纵向压缩强度（跟俯仰）。
- * 此外 UI 滑块「上下 fitDy / 大小 fitScale / 左右 fitDx / 旋转 fitRot」即 STATE.fit，
- *   在 app.js 中实时传入本函数的 fit 参数，优先级最高，可即时拖动微调。
+ * 一、检测管线：优先 MediaPipe FaceMesh 468/478 点 + 4×4 头部姿态矩阵；
+ *     CDN/模型不可用时自动降级 face-api 68 点（extractFaceAnchors 统一适配）。
+ * 二、定位策略：不再用"脸中心"，而是用固定解剖锚点
+ *       33/468 左眼中心 · 263/473 右眼中心 · 151 眉心 · 10 额顶 · 234/454 太阳穴 · 152 下巴
+ *     → 求出【头部原点·头宽·头高·倾角】→ 发型基准原点落在【额上颅顶】。
+ * 三、镜像坐标系：landmarks 取自未镜像的 <video> 原生帧，发型也用同一套未镜像
+ *     坐标计算；renderRealtimeAR 内视频与发型在【同一个镜像上下文】里绘制，
+ *     二者同步翻转 → 从根本上消除"画面镜像了、发型没翻转"的恒定左右偏移。
+ * 四、防抖与过渡：关键点(app.js 一阶 EMA) + 变换参数(smoothTransform 二阶 EMA)；
+ *     置信度低于 MIN_CONF 暂停贴图；短暂丢脸保持上一帧并缓慢淡出。
+ * 五、素材适配：每款发型只需在 HAIR_META 填 scaleRate / offsetY / offsetX 三个参数，
+ *     核心追踪代码无需改动。
+ * -------------------------------------------------------------------------
+ * ★ 全局微调入口（AR_TUNE）：
+ *   SCALE_BOOST  全局缩放     GEO_BLEND   缩放信号融合(眼距 vs 眼-颏纵距)
+ *   HAIR_W_COEFF 全局横向宽度  YAW_SHIFT   转头横移强度
+ *   YAW/PITCH_STRENGTH 转头/俯仰压缩强度，YAW/PITCH_MIN 压缩下限
+ * ★ 单款微调入口（HAIR_META[id]）：scaleRate(倍率) / offsetY(×头高,正=下移) / offsetX(×头宽,正=右移)
+ * ★ UI 滑块（STATE.fit）优先级最高：fitScale / fitDx / fitDy / fitRot / fitOpacity
  * ========================================================================= */
 const AR_TUNE = {
-  VERTICAL_OFFSET: 0,    // ★ 上下偏移(px)：正=下移，负=上移（发型锚点相对颅顶）
-  SCALE_BOOST: 1.0,      // ★ 基础缩放倍率：整体缩放微调，与 UI“大小”滑块、每款 arScale 叠加
-  SCALE_MIN: 0.45,       // ★ 缩放下限：防极端远端发型过小
-  SCALE_MAX: 2.20,       // ★ 缩放上限：防极端近端发型过大
-  HEADTOP_RATIO: 0.58,   // 头顶外推比例（眉→头顶 / 眉→下巴）。圆脸↓ 长脸↑
-  TEMPLE_FACTOR: 1.0,    // ★ 横向补偿（鬓角宽度贴合系数）：>1 略宽，<1 略窄
-  YAW_STRENGTH: 0.18,    // 左右转头(yaw)横向压缩强度（0=不跟转，0.25=明显跟转）
-  PITCH_STRENGTH: 0.12,  // 抬头/低头(pitch)纵向压缩强度
-  BOX_PAD: 0.03          // 发顶相对颅顶的蓬度（>0 发顶略高，避免盖脸）
+  SCALE_BOOST:    1.00,  // ★ 全局缩放倍率
+  SCALE_MIN:      0.30,  // 缩放下限（防远端过小）
+  SCALE_MAX:      2.80,  // 缩放上限（防近端过大）
+  POSE_DISTRUST:  2.0,   // 姿态自适应调权强度：越大，大角度时越果断抛弃失真的那路信号
+  YAW_GAIN:       0.68,  // 几何 yaw 增益（三维投影标定：真转头 30° → yawN≈0.5）
+  PITCH_SHIFT:    0.19,  // ★ 俯仰视差补偿：抬头时颅顶朝下的位移量（×头高）
+  HAIR_W_COEFF:   1.00,  // ★ 全局横向宽度系数（>1 发型更宽，包住鬓角）
+  YAW_STRENGTH:   0.22,  // 左右转头(yaw)横向压缩强度
+  PITCH_STRENGTH: 0.16,  // 抬头/低头(pitch)纵向压缩强度
+  YAW_MIN:        0.78,  // yaw 压缩下限（防转头被压扁）
+  PITCH_MIN:      0.82,  // pitch 压缩下限
+  YAW_SHIFT:      0.13,  // ★ 转头视差补偿：颅顶朝转向反侧的横移量（×头宽）
+  EYE_TO_HEAD:    2.10,  // 眼距→头宽 兜底系数（太阳穴点异常时启用）
+  MIN_CONF:       0.30,  // ★ 置信度阈值：低于此暂停贴图，避免无效漂移
+  LOST_HOLD_MS:   600,   // ★ 人脸短暂丢失：保持上一帧位置的时长
+  LOST_FADE_MS:   400,   // ★ 保持期后的淡出时长（淡出完毕彻底隐藏）
+  DEBUG: (typeof location !== 'undefined' && /[?&]ardebug=1/.test(location.search))
 };
+// 暴露到全局：app.js 读取丢脸时间窗口；浏览器控制台可直接改参数实时调试，
+// 例：AR_TUNE.SCALE_BOOST = 1.15 → 下一帧立即生效，无需刷新页面。
+window.AR_TUNE = AR_TUNE;
 
-function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, videoH, box){
-  if(!landmarks || landmarks.length < 68 || !meta || !meta.eyeL || !meta.eyeR) return null;
+/* =========================================================================
+ * 统一锚点提取 —— 把两种检测源归一成同一套解剖锚点（画布像素坐标，未镜像）
+ *   source='mp'  MediaPipe FaceMesh：landmarks 为归一化 {x,y,z} ∈ [0,1]
+ *   source='api' face-api 68 点     ：landmarks 为视频原生像素
+ * 输出：eyeL/eyeR(双眼中心) browMid(眉心) foreheadTop(额顶) nose chin templeL/templeR
+ * ========================================================================= */
+function extractFaceAnchors(landmarks, source, canvasW, canvasH, videoW, videoH){
+  if(!landmarks || !landmarks.length) return null;
 
-  // [AR-DEBUG] ① 坐标映射：视频原生坐标(如1280x960) → 画布坐标(720x880)。
-  //   视频被拉伸铺满画布，不映射会导致发型整体偏移/缩放错位。L 即映射后的关键点。
-  const vsx = (videoW && videoW > 1) ? canvasW / videoW : 1;
-  const vsy = (videoH && videoH > 1) ? canvasH / videoH : 1;
-  const L = landmarks.map(p => ({ x: p.x * vsx, y: p.y * vsy }));
-
-  // —— 生物特征锚点（68 点充分覆盖太阳穴/额头/头顶/下颌）——
-  const e = eyeCentersFromLandmarks(L);
-  const dL = e.L, dR = e.R;                       // 双眼中心
-  const templeL = L[0], templeR = L[16];          // 左右太阳穴（鬓角）
-  const jawChin = L[8];                           // 下颌底（下巴尖）
-  // 源发型双眼锚点（离线检测，PNG 素材坐标系）
-  const sL = { x: meta.eyeL[0], y: meta.eyeL[1] };
-  const sR = { x: meta.eyeR[0], y: meta.eyeR[1] };
-
-  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿。
-  //   ★ 每款发型可在 HAIR_META[id].arScale 单独微调（与 AR_TUNE.SCALE_BOOST、UI“大小”滑块叠加）
-  const dDist = Math.hypot(dR.x - dL.x, dR.y - dL.y);
-  const sDist = Math.max(1, Math.hypot(sR.x - sL.x, sR.y - sL.y));
-  const coverage = meta.coverage || 0.25;
-  const coverageScale = 1.06 + Math.max(0, (0.30 - coverage) * 0.5);
-  const scaleBoost = AR_TUNE.SCALE_BOOST * (meta.arScale != null && isFinite(meta.arScale) ? meta.arScale : 1);
-  // [AR-DEBUG] ② 自适应缩放核心：双眼距(头型) + 人脸包围盒(远近) 双信号实时算头部像素尺寸。
-  //   box.width = 视频坐标人脸包围盒宽；srcBoxW = 素材发型包围盒宽；比值与坐标空间无关。
-  //   人物靠近→box变大→scaleFromBox变大→发型放大；远离→变小。逐帧动态更新。
-  const srcBoxW = (meta.box && meta.box[2] > meta.box[0]) ? (meta.box[2] - meta.box[0]) : null;
-  const scaleFromEye = dDist / sDist;
-  let scaleFromBox = scaleFromEye;
-  if(box && box.width && srcBoxW){ scaleFromBox = box.width / srcBoxW; } // 顾客头宽 / 素材头宽 = 距离自适应缩放比
-  const sizeRatio = srcBoxW ? (0.5 * scaleFromEye + 0.5 * scaleFromBox) : scaleFromEye;
-  // [AR-DEBUG] 缩放上下限钳制：防极端距离下发型过大/过小
-  const scale = _clamp(sizeRatio * coverageScale * scaleBoost, AR_TUNE.SCALE_MIN, AR_TUNE.SCALE_MAX);
-
-  // 旋转：双眼倾角差（跟随头部左右倾斜 roll）
-  const angle = Math.atan2(dR.y - dL.y, dR.x - dL.x) - Math.atan2(sR.y - sL.y, sR.x - sL.x);
-
-  // —— 头部姿态（角度联动）——
-  // yaw（左右转头）：鼻尖(30)到左右太阳穴(0/16)的横向不对称 → 转头时发型横向轻微压缩
-  const nose = L[30];
-  const dLx = Math.abs(nose.x - L[0].x), dRx = Math.abs(nose.x - L[16].x);
-  const yaw = _clamp((dRx - dLx) / Math.max(1, (dLx + dRx)), -0.7, 0.7);
-  // pitch（抬头/低头）：眉-鼻底 与 鼻底-下巴 高度比偏离正面 → 俯仰时纵向压缩
-  const browMidY = Math.min(L[19].y, L[24].y);
-  const noseBotY = L[33].y;
-  const pitch = _clamp(((noseBotY - browMidY) - (jawChin.y - noseBotY)) / Math.max(1, (jawChin.y - browMidY)), -0.5, 0.5);
-  const yawComp   = _clamp(1 - AR_TUNE.YAW_STRENGTH   * Math.abs(yaw),   0.80, 1.0);
-  const pitchComp = _clamp(1 - AR_TUNE.PITCH_STRENGTH * Math.abs(pitch), 0.85, 1.0);
-
-  const dM = { x: (dL.x + dR.x) / 2, y: (dL.y + dR.y) / 2 };
-  const sM = { x: (sL.x + sR.x) / 2, y: (sL.y + sR.y) / 2 };
-
-  // —— 人脸自动适配：按“脸宽/眼距”“脸长/眼距”“额头高度”做各向异性微调（宽脸加宽、长脸拉长、高额头拉高）——
-  let fitX = 1, fitY = 1, foreheadMul = 1;
-  if(meta.face){
-    const a = computeAnchorsFromLandmarks(L);
-    const jaw = L.slice(0, 17);
-    let minX = Infinity, maxX = -Infinity;
-    jaw.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); });
-    const browTopY = Math.min(...L.slice(17, 27).map(p => p.y));
-    const dFaceW = maxX - minX;                    // 顾客颧-颌最大宽
-    const dFaceH = L[8].y - browTopY;              // 顾客眉-颏高
-    const dForeheadH = dFaceH * AR_TUNE.HEADTOP_RATIO;  // 顾客额头高（按可调比例外推）
-    const dTempleW = a ? a.templeW : dFaceW * 0.94;
-    const wRatio = (dTempleW / dDist) / ((meta.face[2] / 1.06) / sDist);
-    const hRatio = ((dFaceH * 1.22) / dDist) / (meta.face[3] / sDist);
-    fitX = _clamp(wRatio, 0.86, 1.18);
-    fitY = _clamp(hRatio, 0.86, 1.18);
-    // 高额头补偿：顾客额头比素材高时，纵向上拉头发覆盖区
-    const srcForeheadH = meta.h * AR_TUNE.HEADTOP_RATIO * (meta.face[3] / Math.max(1, meta.h));
-    const fhRatio = dForeheadH / Math.max(1, srcForeheadH);
-    foreheadMul = _clamp(fhRatio, 0.92, 1.15);
+  /* ---- ① MediaPipe FaceMesh（468 基础点 / 478 含虹膜）---- */
+  if(source === 'mp'){
+    if(landmarks.length < 468) return null;
+    const P = i => { const p = landmarks[i]; return { x: p.x * canvasW, y: p.y * canvasH, z: (p.z || 0) * canvasW }; };
+    const MID = idx => {
+      let x = 0, y = 0;
+      for(const i of idx){ x += landmarks[i].x; y += landmarks[i].y; }
+      return { x: (x / idx.length) * canvasW, y: (y / idx.length) * canvasH, z: 0 };
+    };
+    // 眼中心：有虹膜点(478)时用虹膜中心，否则用眼环均值（含用户指定的 33 / 263）
+    const hasIris = landmarks.length >= 478;
+    const eyeL = hasIris ? MID([468, 469, 470, 471, 472]) : MID([33, 133, 159, 145]);
+    const eyeR = hasIris ? MID([473, 474, 475, 476, 477]) : MID([263, 362, 386, 374]);
+    return {
+      eyeL, eyeR,
+      browMid:     P(151),   // 眉心
+      foreheadTop: P(10),    // 额头顶点
+      nose:        P(1),     // 鼻尖
+      chin:        P(152),   // 下巴
+      templeL:     P(234),   // 左太阳穴
+      templeR:     P(454),   // 右太阳穴
+      source: 'mp', n: landmarks.length
+    };
   }
 
-  // 长短滑块（实时模式固定中性 0.5）
-  const syMul = 0.92 + 0.5 * 0.18;
+  /* ---- ② face-api 68 点（降级兜底）---- */
+  if(landmarks.length < 68) return null;
+  const kx = (videoW && videoW > 1) ? canvasW / videoW : 1;
+  const ky = (videoH && videoH > 1) ? canvasH / videoH : 1;
+  const P = i => ({ x: landmarks[i].x * kx, y: landmarks[i].y * ky, z: 0 });
+  const MID = idx => {
+    let x = 0, y = 0;
+    for(const i of idx){ x += landmarks[i].x; y += landmarks[i].y; }
+    return { x: (x / idx.length) * kx, y: (y / idx.length) * ky, z: 0 };
+  };
+  const eyeL = MID([36, 37, 38, 39, 40, 41]);
+  const eyeR = MID([42, 43, 44, 45, 46, 47]);
+  const browMid = MID([21, 22]);
+  const chin = P(8);
+  // 68 点无额顶 → 由眉心沿"下巴→眉心"方向外推 0.42×(眉→颏)，等效 MediaPipe 点 10
+  const foreheadTop = {
+    x: browMid.x + (browMid.x - chin.x) * 0.42,
+    y: browMid.y + (browMid.y - chin.y) * 0.42, z: 0
+  };
+  return {
+    eyeL, eyeR, browMid, foreheadTop, nose: P(30), chin,
+    templeL: P(0), templeR: P(16), source: 'api', n: landmarks.length
+  };
+}
 
-  // 手动微调
-  const f = fit || {};
-  const uScale = (f.scale != null && isFinite(f.scale)) ? _clamp(f.scale, 0.5, 1.8) : 1;
-  const uDx = f.dx || 0, uDy = f.dy || 0, uRot = f.rot || 0;
+/* =========================================================================
+ * 核心：求解发型 → 画布 的相似变换
+ *   landmarks 检测点； matrix 4×4 头部姿态矩阵(可为 null)； meta HAIR_META[id]
+ *   opts = { canvasW, canvasH, fit, source, videoW, videoH }
+ * 返回 T = { dx,dy,angle,sx,sy,ox,oy,valid,pose,headW,headH,anchors }
+ *   绘制序列：translate(dx,dy) → rotate(angle) → scale(sx,sy) → translate(-ox,-oy)
+ *   即：素材颅顶(ox,oy) 被精确钉在实检颅顶(dx,dy) 上 —— 这就是"绑定人头"。
+ * ========================================================================= */
+function buildRealtimeTransform(landmarks, matrix, meta, opts){
+  opts = opts || {};
+  const canvasW = opts.canvasW || 0, canvasH = opts.canvasH || 0;
+  const fit = opts.fit || {};
+  if(!meta || !meta.eyeL || !meta.eyeR || !canvasW || !canvasH) return null;
+
+  const A = extractFaceAnchors(landmarks, opts.source || 'mp', canvasW, canvasH, opts.videoW, opts.videoH);
+  if(!A) return null;
+
+  /* ---------- ① 头部几何量（画布像素） ---------- */
+  const eyeMid  = { x: (A.eyeL.x + A.eyeR.x) / 2, y: (A.eyeL.y + A.eyeR.y) / 2 };
+  const eyeDist = Math.hypot(A.eyeR.x - A.eyeL.x, A.eyeR.y - A.eyeL.y);
+  if(!isFinite(eyeDist) || eyeDist < 6) return null;
+
+  const roll  = Math.atan2(A.eyeR.y - A.eyeL.y, A.eyeR.x - A.eyeL.x);  // 头部左右倾斜
+  const up    = { x:  Math.sin(roll), y: -Math.cos(roll) };            // 「头朝上」单位向量（随 roll 同步旋转）
+  const right = { x:  Math.cos(roll), y:  Math.sin(roll) };            // 「头朝右」单位向量
+
+  let headW = Math.hypot(A.templeR.x - A.templeL.x, A.templeR.y - A.templeL.y);
+  if(!isFinite(headW) || headW < eyeDist * 0.9) headW = eyeDist * AR_TUNE.EYE_TO_HEAD;
+  let headH = Math.hypot(A.chin.x - A.foreheadTop.x, A.chin.y - A.foreheadTop.y);
+  if(!isFinite(headH) || headH < eyeDist) headH = headW * 1.35;
+
+  /* ---------- ② 3D 头部姿态（yaw / pitch / roll） ----------
+   * yaw 以【几何解】为准绳：两侧都在同一画布坐标系里测量，符号语义明确可控，
+   *   不受 MediaPipe 矩阵坐标约定（不同版本/平台可能左右手系不同）影响。
+   *   约定：yawN > 0 = 头转向画面右侧（鼻尖靠近右太阳穴）。
+   *   增益 YAW_GAIN 经三维投影标定：转头 30° → yawN ≈ 0.5（即 30/60）。
+   * 矩阵解只在【符号一致】时做小权重微调，符号相反时判定为坐标约定不同并弃用，
+   *   避免出现"越转头发型越往反方向跑"的致命错位。
+   * pitch 无可靠几何解（个体脸型差异大），仅在矩阵可用时启用；
+   *   face-api 降级路径下 pitch=0，宁可不做纵向压缩，也不引入错误信号。
+   * ---------------------------------------------------------------------- */
+  const dTl = Math.hypot(A.nose.x - A.templeL.x, A.nose.y - A.templeL.y);
+  const dTr = Math.hypot(A.nose.x - A.templeR.x, A.nose.y - A.templeR.y);
+  let yawN = _clamp((dTl - dTr) / Math.max(1, dTl + dTr) * AR_TUNE.YAW_GAIN, -1, 1);
+  let pitchN = 0, poseMat = null;
+  if(matrix && matrix.length >= 16){
+    const R = (r, c) => matrix[c * 4 + r];                 // MediaPipe 返回列主序 4×4
+    const mYaw   = Math.atan2(R(0, 2), R(2, 2));
+    const mPitch = Math.asin(_clamp(-R(1, 2), -1, 1));
+    const mRoll  = Math.atan2(R(1, 0), R(1, 1));
+    poseMat = { yaw: mYaw, pitch: mPitch, roll: mRoll };
+    if(isFinite(mPitch)) pitchN = _clamp(mPitch / (Math.PI / 3), -1, 1);
+    const my = _clamp(mYaw / (Math.PI / 3), -1, 1);
+    if(isFinite(my) && Math.abs(yawN) > 0.08 && Math.abs(my) > 0.08 && Math.sign(my) === Math.sign(yawN)){
+      yawN = yawN * 0.7 + my * 0.3;
+    }
+  }
+  const yawRad    = yawN   * (Math.PI / 3);
+  const pitchRad  = pitchN * (Math.PI / 3);
+  const yawComp   = _clamp(1 - AR_TUNE.YAW_STRENGTH   * Math.abs(yawN),   AR_TUNE.YAW_MIN,   1);
+  const pitchComp = _clamp(1 - AR_TUNE.PITCH_STRENGTH * Math.abs(pitchN), AR_TUNE.PITCH_MIN, 1);
+
+  /* ---------- ③ 素材侧几何（PNG 像素坐标） ---------- */
+  const sEyeL = { x: meta.eyeL[0], y: meta.eyeL[1] };
+  const sEyeR = { x: meta.eyeR[0], y: meta.eyeR[1] };
+  const sEyeMid  = { x: (sEyeL.x + sEyeR.x) / 2, y: (sEyeL.y + sEyeR.y) / 2 };
+  const sEyeDist = Math.max(1, Math.hypot(sEyeR.x - sEyeL.x, sEyeR.y - sEyeL.y));
+  const sRoll    = Math.atan2(sEyeR.y - sEyeL.y, sEyeR.x - sEyeL.x);
+  const sBox     = (meta.box && meta.box.length === 4) ? meta.box : [0, 0, meta.w, meta.h];
+  const sCrown   = { x: (sBox[0] + sBox[2]) / 2, y: sBox[1] };   // 素材颅顶＝发型包围盒顶边中点
+
+  /* ---------- ④ 自适应缩放：远近实时跟随 ----------
+   * 双信号互补融合，两者盲区正好错开：
+   *   信号 A 眼距比      —— 对俯仰完全免疫（双眼绕 X 轴转不改变间距），但转头时被 cos(yaw) 压缩
+   *   信号 B 眼→颏纵距比 —— 对转头完全免疫（纵向不受 yaw 影响），但对俯仰敏感
+   * ★ 不对 B 做 cos(pitch) 补偿：抬头时下巴靠近镜头，透视放大压过余弦收缩，
+   *   眼-颏距实际是【变长】而非变短，套用余弦补偿会把误差放大一倍（曾实测纵向脱节 18% 头高）。
+   *   改为按姿态动态调权：转头越大越信 B，俯仰越大越信 A，让不可信的信号自动退场。
+   * ---------------------------------------------------------------------- */
+  const sigA = (eyeDist / Math.max(0.78, Math.cos(yawRad))) / sEyeDist;
+  let sigB = null;
+  if(meta.face && meta.face.length === 4 && meta.face[3] > 1){
+    const sChinY = meta.face[1] + meta.face[3];                  // 素材下巴 y（人脸框底边）
+    const sVert  = Math.max(1, Math.abs(sChinY - sEyeMid.y));
+    const dVert  = Math.hypot(A.chin.x - eyeMid.x, A.chin.y - eyeMid.y);
+    const r = dVert / sVert;
+    if(isFinite(r) && r > 0) sigB = r;
+  }
+  let sizeSig;
+  if(sigB == null){
+    sizeSig = sigA;
+  }else{
+    const wA = 1 / (1 + AR_TUNE.POSE_DISTRUST * Math.abs(yawN));    // 转头越大，眼距越不可信
+    const wB = 1 / (1 + AR_TUNE.POSE_DISTRUST * Math.abs(pitchN));  // 俯仰越大，纵距越不可信
+    const blend = _clamp(wB / (wA + wB), 0.15, 0.85);               // sigB 的权重（正面时 0.5）
+    sizeSig = blend * sigB + (1 - blend) * sigA;
+  }
+  const scaleRate   = (meta.scaleRate != null && isFinite(meta.scaleRate)) ? meta.scaleRate : 1;  // ★ 单款倍率
+  const legacyScale = (meta.arScale   != null && isFinite(meta.arScale))   ? meta.arScale   : 1;  // 兼容旧参数
+  let scale = _clamp(sizeSig * scaleRate * legacyScale * AR_TUNE.SCALE_BOOST,
+                     AR_TUNE.SCALE_MIN, AR_TUNE.SCALE_MAX);
+
+  /* ---------- ⑤ UI 手动微调（优先级最高） ---------- */
+  const uScale = (fit.scale != null && isFinite(fit.scale)) ? _clamp(fit.scale, 0.5, 1.8) : 1;
+  const uDx = fit.dx || 0, uDy = fit.dy || 0, uRot = fit.rot || 0;
   const finalScale = scale * uScale;
+  const angle = (roll - sRoll) + uRot;
 
-  // ④+++ 基础相似变换（双眼对齐 + 自动适配，暂不含手动偏移）
-  // [AR-DEBUG] ④ 最终变换矩阵 T：dx/dy=平移(锚点位置)，sx/sy=缩放(含自适应scale+脸型fitX/fitY+俯仰)，angle=旋转(roll+yaw/pitch)。
-  //   发型贴图即以 T 映射到画布：先平移到锚点→旋转→缩放→回退源锚点→绘制。
-  const T = {
-    dx: dM.x, dy: dM.y, angle: angle,
-    sx: finalScale * fitX * yawComp,                 // 叠加 yaw 横向压缩
-    sy: finalScale * fitY * syMul * foreheadMul * pitchComp, // 叠加 pitch 纵向压缩
-    ox: sM.x, oy: sM.y
+  /* ---------- ⑥ 颅顶落点：发型基准原点在"额上颅顶"，不是脸中心 ---------- */
+  // 素材自身的「眼中心 → 颅顶」向量，经旋转+缩放搬到顾客头上 → 头部比例自动匹配
+  const ca = Math.cos(angle), sa = Math.sin(angle);
+  const vx = (sCrown.x - sEyeMid.x) * finalScale, vy = (sCrown.y - sEyeMid.y) * finalScale;
+  const crownProp = { x: eyeMid.x + (vx * ca - vy * sa), y: eyeMid.y + (vx * sa + vy * ca) };
+  // 素材适配偏移：offsetY(×头高，正=下移) / offsetX(×头宽，正=右移)
+  const offsetY = (meta.offsetY != null && isFinite(meta.offsetY)) ? meta.offsetY : 0;
+  const offsetX = (meta.offsetX != null && isFinite(meta.offsetX)) ? meta.offsetX : 0;
+  // 转头视差补偿：颅顶位于头部中轴线【偏后】，双眼位于【偏前】，二者深度不同。
+  //   头转向画面右侧(yawN>0)时，颅顶在图像上会朝【左】偏移，而眼中心朝右——
+  //   若不补这一项，转头时发型就会明显滞后/甩到脸的一侧。系数经三维投影标定。
+  const lateral = offsetX * headW - yawN * AR_TUNE.YAW_SHIFT * headW;
+  // 俯仰视差补偿：同理，抬头(pitchN>0)时头往后仰，颅顶在图像上朝【下】走；低头则朝上。
+  const vertical = (offsetY + pitchN * AR_TUNE.PITCH_SHIFT) * headH;
+  const crown = {
+    x: crownProp.x - up.x * vertical + right.x * lateral,
+    y: crownProp.y - up.y * vertical + right.y * lateral
   };
 
-  // —— 人头锚点自动对齐：以【顾客真实人头】为摆放基准（头顶 + 左右鬓角）——
-  //    发顶锁到估算头顶(headTop)，中线锁到真实人头中线(headCx)，消除垂直过高/过低与左右脱离头部
-  if(meta.box){
-    const bx0 = meta.box[0], by0 = meta.box[1], bx1 = meta.box[2];
-    const bcx = (bx0 + bx1) / 2;
-    const hairTopY = T.dy + (by0 - T.oy) * T.sy;   // 变换后的发顶 Y
-    const hairCx   = T.dx + (bcx - T.ox) * T.sx;   // 变换后的发型中线 X
-    const a = computeAnchorsFromLandmarks(L);
-    let targetTop, targetCx, refH, refW, full;
-    if(a){
-      refH = a.faceH; refW = a.faceW;
-      // [AR-DEBUG] ③ 锚点锁定颅顶：targetTop 由预估颅顶点(a.headTop = 眉上外推) 决定，
-      //   再叠加 VERTICAL_OFFSET / 每款 arDy → 发型落在头顶区域，不盖脸。
-      targetTop = a.headTop - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET + (meta.arDy != null ? meta.arDy : 0);
-      targetCx  = a.headCx;                 // 真实人头中线（鬓角中点为主）
-      full = 1;                             // 完全对齐，严格跟随人头
-    }else{
-      refH = canvasH * 0.30; refW = canvasW * 0.40;
-      targetTop = canvasH * 0.16 - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET + (meta.arDy != null ? meta.arDy : 0);
-      targetCx  = canvasW / 2;
-      full = 0.82;
-    }
-    T.dy += _clamp((targetTop - hairTopY) * full, -refH * 1.60, refH * 1.60);
-    T.dx += _clamp((targetCx  - hairCx)  * full, -refW * 1.60, refW * 1.60);
-    // 鬓角二次对位：把发型左右外缘按顾客鬓角连线做精修，消除单侧偏移
-    if(a){
-      const hairHalfW = ((bx1 - bx0) / 2) * T.sx;
-      const wantHalfW = (a.templeW / 2) * AR_TUNE.TEMPLE_FACTOR * (1 + Math.max(0, (0.34 - coverage) * 0.7));
-      const kw = _clamp(wantHalfW / Math.max(1, hairHalfW), 0.90, 1.12);
-      if(Math.abs(kw - 1) > 0.01){
-        T.sx *= kw;
-        T.dx = targetCx - (bcx - T.ox) * T.sx;
-      }
-      // 头顶再锁一次（保证与 headTop 严格对齐）
-      T.dy += (targetTop - (T.dy + (by0 - T.oy) * T.sy));
-    }
-  }
-
-  // 手动微调（上下偏移 / 左右偏移 / 旋转）叠加在自动贴合之上。
-  //   ★ meta.arDx 为每款发型单独的横向偏移覆盖（与 UI“左右”滑块、AR_TUNE 叠加）
-  T.dx += uDx + (meta.arDx != null ? meta.arDx : 0);
-  T.dy += uDy;
-  T.angle += uRot;
-
-  T.valid = isFinite(dDist) && dDist > 10 && scale > 0.1 && scale < 8
-            && isFinite(T.dx) && isFinite(T.dy) && isFinite(T.sx) && isFinite(T.sy);
+  /* ---------- ⑦ 输出变换 ---------- */
+  const T = {
+    ox: sCrown.x, oy: sCrown.y,                                     // 变换原点＝素材颅顶
+    dx: crown.x + uDx + (meta.arDx != null ? meta.arDx : 0),        // 落点＝实检颅顶
+    dy: crown.y + uDy + (meta.arDy != null ? meta.arDy : 0),
+    angle: angle,
+    sx: finalScale * AR_TUNE.HAIR_W_COEFF * yawComp,
+    sy: finalScale * pitchComp,
+    pose: { yaw: yawN, pitch: pitchN, roll: roll, matrix: poseMat },
+    headW: headW, headH: headH, eyeDist: eyeDist,
+    anchors: A, eyeMid: eyeMid, crown: crown
+  };
+  T.valid = isFinite(T.dx) && isFinite(T.dy) && isFinite(T.sx) && isFinite(T.sy) && isFinite(T.angle)
+            && T.sx > 0.02 && T.sy > 0.02 && eyeDist > 8 && Math.abs(angle) < 1.4;
   return T;
 }
 
-// 双阶滤波·第二阶：对发型变换参数(dx/dy/sx/sy/angle)再做一次指数平滑，
-// 抑制“人物轻微晃动时发型忽大忽小、剧烈抖动”。首帧/重置时直接吸附。
+/* =========================================================================
+ * 双阶滤波·第二阶：对变换参数(dx/dy/sx/sy/angle/ox/oy)再做指数平滑
+ *   ★ 修复历史缺陷：旧版未复制 ox/oy → 渲染时 translate(NaN,NaN) 被浏览器静默
+ *     忽略，发型原点没有回退，导致"发型独立悬浮、与人头脱节"。
+ * ========================================================================= */
 let _hairTSmooth = null;
-const _T_SMOOTH = 0.30;   // 越小越稳（抗抖动），越大越跟手
+const _T_SMOOTH = 0.32;   // 越小越稳（抗抖动），越大越跟手
 function resetHairSmoothing(){ _hairTSmooth = null; }
-// [AR-DEBUG] ⑥ 双阶滤波·第二阶：对变换参数(dx/dy/sx/sy/angle)再做指数平滑，
-//   抑制“人物轻微晃动时发型忽大忽小、剧烈漂移”。首帧/重置时直接吸附。
 function smoothTransform(T){
   if(!T) return null;
   if(!_hairTSmooth){
-    _hairTSmooth = { dx:T.dx, dy:T.dy, sx:T.sx, sy:T.sy, angle:T.angle, valid:T.valid };
+    _hairTSmooth = { dx:T.dx, dy:T.dy, sx:T.sx, sy:T.sy, angle:T.angle, ox:T.ox, oy:T.oy, valid:T.valid };
     return _hairTSmooth;
   }
   const a = _T_SMOOTH;
@@ -1205,43 +1281,83 @@ function smoothTransform(T){
   _hairTSmooth.sx    += (T.sx    - _hairTSmooth.sx)    * a;
   _hairTSmooth.sy    += (T.sy    - _hairTSmooth.sy)    * a;
   _hairTSmooth.angle += (T.angle - _hairTSmooth.angle) * a;
+  _hairTSmooth.ox     = T.ox;    // 素材原点随款式切换直接吸附，不做插值
+  _hairTSmooth.oy     = T.oy;
   _hairTSmooth.valid  = T.valid;
   return _hairTSmooth;
 }
 
-// 实时 AR 渲染：将发型 PNG 叠加到视频帧上
+/* =========================================================================
+ * 实时 AR 渲染（图层顺序：底层=摄像头画面，顶层=发型透明 PNG）
+ * opts = { video, landmarks, matrix, source, confidence, hairImg, hairMeta,
+ *          colorId, texture, fit, hairAlpha }
+ *   hairAlpha  丢脸淡出用的整体透明度（1=正常，0=完全隐藏）
+ *   confidence 检测置信度，低于 AR_TUNE.MIN_CONF 时暂停贴图
+ * 返回本帧变换 T（无贴图时返回 null），供上层做调试/状态判断。
+ * ========================================================================= */
 function renderRealtimeAR(canvas, opts){
-  // opts: { video, landmarks, box, hairImg, hairMeta, colorId, texture, fit }
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  if(!opts.video) return;
+  if(!opts || !opts.video) return null;
   const vw = opts.video.videoWidth || W;
   const vh = opts.video.videoHeight || H;
-  // ① 进入镜像上下文：视频与发型都在同一镜像空间绘制 → 左右严格对齐，消除左右翻转错位
+
+  // ★ 镜像上下文：视频与发型在同一镜像空间绘制 → 二者同步翻转，左右严格对齐
   ctx.save();
   ctx.translate(W, 0); ctx.scale(-1, 1);
-  // 视频帧（按画布比例拉伸铺满）
+
+  // —— 图层①：摄像头画面（底层，按画布比例拉伸铺满，坐标系严格对齐）——
   ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
-  // ② 有发型且有关键点 → 叠加发型贴图（landmarks 为视频原生坐标，buildRealtimeTransform 内部映射到画布坐标）
-  if(opts.landmarks && opts.hairImg && opts.hairMeta){
-    // [AR-DEBUG] ⑦ 第一阶：关键点/包围盒已在 app.js 平滑；此处算出原始变换 T0。
-    const T0 = buildRealtimeTransform(opts.landmarks, opts.hairMeta, W, H, opts.fit, vw, vh, opts.box);
-    // [AR-DEBUG] ⑧ 第二阶：对变换参数再做指数平滑 → 消除忽大忽小/剧烈抖动。
-    const T = (T0 && T0.valid) ? smoothTransform(T0) : null;
-    if(T){
-      const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|'+opts.hairImg.src, 2.5);
+
+  // —— 图层②：发型透明 PNG（顶层）——
+  let T0 = null, T = null;
+  const conf  = (opts.confidence != null && isFinite(opts.confidence)) ? opts.confidence : 1;
+  const alpha = (opts.hairAlpha  != null && isFinite(opts.hairAlpha))  ? _clamp(opts.hairAlpha, 0, 1) : 1;
+  if(opts.landmarks && opts.hairImg && opts.hairMeta && conf >= AR_TUNE.MIN_CONF && alpha > 0.01){
+    T0 = buildRealtimeTransform(opts.landmarks, opts.matrix, opts.hairMeta, {
+      canvasW: W, canvasH: H, fit: opts.fit,
+      source: opts.source || 'mp', videoW: vw, videoH: vh
+    });
+    T = (T0 && T0.valid) ? smoothTransform(T0) : null;
+    if(T && isFinite(T.ox) && isFinite(T.oy)){
+      const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|' + opts.hairImg.src, 2.5);
       const op = (opts.fit && opts.fit.opacity != null && isFinite(opts.fit.opacity)) ? _clamp(opts.fit.opacity, 0.2, 1) : 1;
-      ctx.globalAlpha = op;
-      // [AR-DEBUG] ⑨ 发型最终绘制：以 T 把发型 PNG(原点在左上) 映射到画布锚点。若发型偏大/偏小/偏位，
-      //   优先调 AR_TUNE.SCALE_BOOST / VERTICAL_OFFSET / TEMPLE_FACTOR 或对应款式 arScale/arDy/arDx。
+      ctx.save();
+      ctx.globalAlpha = op * alpha;
       ctx.translate(T.dx, T.dy);
       ctx.rotate(T.angle);
       ctx.scale(T.sx, T.sy);
       ctx.translate(-T.ox, -T.oy);
       ctx.drawImage(sprite, 0, 0, opts.hairMeta.w, opts.hairMeta.h);
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
   }
   ctx.restore();
+
+  if(AR_TUNE.DEBUG && T0) drawArDebug(ctx, T0, W, H);
+  return T;
+}
+
+/* 调试叠加层（仅 URL 带 ?ardebug=1 时启用）：可视化锚点，便于逐款校准 */
+function drawArDebug(ctx, T, W, H){
+  const A = T.anchors; if(!A) return;
+  ctx.save();
+  ctx.translate(W, 0); ctx.scale(-1, 1);
+  const dot = (p, c, r) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(p.x, p.y, r || 4, 0, Math.PI * 2); ctx.fill(); };
+  dot(A.eyeL, '#00e5ff'); dot(A.eyeR, '#00e5ff');
+  dot(A.browMid, '#ffd400'); dot(A.foreheadTop, '#ff7b00');
+  dot(A.chin, '#7cff00'); dot(A.templeL, '#ff00c8'); dot(A.templeR, '#ff00c8');
+  dot(T.crown, '#ff2d2d', 6);
+  ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(A.eyeL.x, A.eyeL.y); ctx.lineTo(A.eyeR.x, A.eyeR.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(T.eyeMid.x, T.eyeMid.y); ctx.lineTo(T.crown.x, T.crown.y); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(8, 8, 250, 92);
+  ctx.fillStyle = '#fff'; ctx.font = '12px monospace';
+  ctx.fillText('src=' + A.source + '  n=' + A.n, 16, 26);
+  ctx.fillText('scale sx=' + T.sx.toFixed(3) + ' sy=' + T.sy.toFixed(3), 16, 44);
+  ctx.fillText('headW=' + T.headW.toFixed(1) + ' headH=' + T.headH.toFixed(1), 16, 62);
+  ctx.fillText('yaw=' + T.pose.yaw.toFixed(2) + ' pitch=' + T.pose.pitch.toFixed(2) + ' roll=' + T.pose.roll.toFixed(2), 16, 80);
+  ctx.fillText('eyeDist=' + T.eyeDist.toFixed(1) + '  angle=' + T.angle.toFixed(3), 16, 96);
 }

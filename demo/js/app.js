@@ -15,7 +15,9 @@
     page: 'studio',       // 当前页面：studio/library/popular/season/archive
     metrics: { faceShape:'鹅蛋脸', skinTone:'neutral', skinColor:'#e8c9a8', currentLength:'medium', preferEasy:false, gender:'female', hasDetection:false,
                hairType:'normal', styleTime:'normal', acceptPerm:true },
-    selectedStyleId: 1,
+    // 默认选中款：取发型库第一条真实存在的 id（历史上写死 1，但 data.js 无 id=1，
+    // 会去请求不存在的 img/hair/s01.png 而报 404）
+    selectedStyleId: (typeof HAIRSTYLES !== 'undefined' && HAIRSTYLES.length) ? HAIRSTYLES[0].id : 2,
     compareId: null,      // 对比款 B 的发型 id
     compareOn: false,     // 双方案对比开关
     view: 'front',
@@ -790,19 +792,29 @@
   }
   function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } camReady=false; stopAutoDetect(); stopRealtimeAR(); }
 
-  /* ---------- 实时 AR 跟踪循环 ---------- */
+  /* =======================================================================
+   * 实时 AR 跟踪循环 v2
+   *   检测管线：MediaPipe FaceMesh(468/478 点 + 3D 姿态矩阵) 为主，
+   *            CDN/模型不可用时自动降级 face-api 68 点，功能不中断。
+   *   状态过渡：置信度 < AR_TUNE.MIN_CONF 暂停贴图；
+   *            人脸丢失 < LOST_HOLD_MS 保持上一帧 → 随后 LOST_FADE_MS 内淡出 → 隐藏并提示。
+   * ======================================================================= */
   let _rtTimer = null;           // requestAnimationFrame ID
   let _rtRunning = false;        // 是否正在运行
-  let _rtLandmarks = null;       // 最新检测到的68关键点（视频原生坐标）
-  let _rtSmoothLM = null;        // 指数平滑后的关键点（消除抖动/检测波动造成的发型剧烈晃动）
-  let _rtBox = null;             // 最新人脸包围盒（视频原生坐标）
-  let _rtSmoothBox = null;       // 平滑后包围盒（双阶滤波·第一阶之一）
-  let _rtLastDetect = 0;        // 上次检测时间戳
-  let _rtNoFace = 0;             // 连续未检到人脸的帧计数（用于软提示）
-  // 平滑系数：越大越跟手，越小越稳（抗抖动）。0.35 在跟随性与稳定性间取得平衡
-  const _RT_SMOOTH = 0.35;
-  // 检测频率：桌面 ~7.7fps，移动 ~4.5fps（比旧版更频繁 → 小幅度转头/侧脸跟踪更连续）
-  const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 220 : 130;
+  let _rtLandmarks = null;       // 最新关键点（mp: 归一化 0..1 / api: 视频原生像素）
+  let _rtSmoothLM = null;        // 一阶 EMA 平滑后的关键点
+  let _rtMatrix = null;          // 最新 4×4 头部姿态矩阵（MediaPipe 提供，可为 null）
+  let _rtSource = 'mp';          // 当前检测源：'mp' | 'api'
+  let _rtConf = 0;               // 当前检测置信度 0..1
+  let _rtLastSeen = 0;           // 最近一次成功检测到人脸的时间戳
+  let _rtLastDetect = 0;         // 上次发起检测的时间戳
+  let _rtNoFace = 0;             // 连续未检到人脸的次数（用于软提示）
+  let _rtMPTried = false;        // MediaPipe 是否已尝试初始化
+  // 一阶平滑系数：越大越跟手，越小越稳。mp 点多且稳 → 可略高
+  const _RT_SMOOTH = 0.40;
+  // 检测频率：MediaPipe 很快，可提高到 ~16fps（桌面）/ ~9fps（移动）
+  const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 110 : 60;
+  const _AR = window.AR_TUNE || { MIN_CONF:0.3, LOST_HOLD_MS:600, LOST_FADE_MS:400 };
 
   // 检测困难时的软提示（不阻断流程）
   function suggestFaceHint(){
@@ -817,11 +829,13 @@
     if(_rtRunning) return;
     _rtRunning = true;
     _rtNoFace = 0;
-    _rtSmoothLM = null;   // 重置平滑缓存，首帧直接贴合（避免从上次残留位置滑入）
-    _rtBox = null; _rtSmoothBox = null;
-    if(typeof resetHairSmoothing === 'function') resetHairSmoothing(); // 重置发型变换参数二阶平滑
+    _rtSmoothLM = null;   // 重置平滑缓存，首帧直接吸附（避免从上次残留位置滑入）
+    _rtLandmarks = null; _rtMatrix = null; _rtConf = 0; _rtLastSeen = 0;
+    if(typeof resetHairSmoothing === 'function') resetHairSmoothing(); // 重置二阶平滑
     const rc = $('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
     $('camHint').textContent = '正对摄像头，发型实时跟随中';
+    // 预热 MediaPipe（异步，不阻塞首帧；失败则整条链路走 face-api）
+    _ensureMediaPipe();
     _rtTick();
   }
   function stopRealtimeAR(){
@@ -829,32 +843,64 @@
     if(_rtTimer){ cancelAnimationFrame(_rtTimer); _rtTimer = null; }
     // 注意：不再隐藏/清空 realtimeCanvas —— 它是唯一试戴画布，照片/手动模式下仍需显示。
   }
-  // 对关键点做指数平滑（EMA）：每帧把平滑值朝最新检测值挪 _RT_SMOOTH 比例，
-  // 既保留跟随性，又滤掉单帧检测噪声 → 发型不会因画面抖动而剧烈晃动
+
+  // MediaPipe 初始化（只触发一次；ES Module 由 index.html 以 type=module 加载）
+  function _ensureMediaPipe(){
+    if(_rtMPTried) return;
+    _rtMPTried = true;
+    // 加载期状态：复用既有 autoDetectStatus 元素，不新增任何 DOM，界面布局保持原样
+    const tip = (s, m) => { if(!autoDetect.detected) updateAutoStatus(s, m); };
+    tip('detecting', '● 正在加载高精度追踪模型…');
+    const tryInit = (retry) => {
+      if(window.MPFace && typeof window.MPFace.init === 'function'){
+        window.MPFace.init().then(ok => {
+          if(ok){
+            console.log('[AR] 追踪引擎：MediaPipe FaceMesh 468 点 / ' + (window.MPFace.delegate || ''));
+            tip('detecting', '● 高精度追踪已就绪 · 正在检测人脸…');
+          }else{
+            _rtSource = 'api';
+            console.warn('[AR] MediaPipe 不可用，降级 face-api 68 点');
+            tip('detecting', '● 正在检测人脸…（基础追踪模式）');
+          }
+        }).catch(() => { _rtSource = 'api'; });
+      }else if(retry > 0){
+        setTimeout(() => tryInit(retry - 1), 300);   // ES Module 还没执行完，稍后重试
+      }else{
+        _rtSource = 'api';
+        console.warn('[AR] 未检测到 MPFace 模块，降级 face-api 68 点');
+        tip('detecting', '● 正在检测人脸…（基础追踪模式）');
+      }
+    };
+    tryInit(20);   // 最多等 6s
+  }
+
+  // 一阶指数平滑（EMA）：把平滑值朝最新检测值挪 _RT_SMOOTH 比例
+  //   → 保留跟随性的同时滤掉单帧检测噪声，发型不会因画面抖动而剧烈晃动
   function smoothLandmarks(raw){
-    if(!raw || raw.length < 68) return null;
+    if(!raw || !raw.length) return null;
     if(!_rtSmoothLM || _rtSmoothLM.length !== raw.length){
-      _rtSmoothLM = raw.map(p => ({ x: p.x, y: p.y }));
+      _rtSmoothLM = raw.map(p => ({ x: p.x, y: p.y, z: p.z || 0 }));
       return _rtSmoothLM;
     }
     const a = _RT_SMOOTH;
     for(let i = 0; i < raw.length; i++){
       _rtSmoothLM[i].x += (raw[i].x - _rtSmoothLM[i].x) * a;
       _rtSmoothLM[i].y += (raw[i].y - _rtSmoothLM[i].y) * a;
+      _rtSmoothLM[i].z += ((raw[i].z || 0) - _rtSmoothLM[i].z) * a;
     }
     return _rtSmoothLM;
   }
-  // 对包围盒做指数平滑（与关键点平滑同系数），用于自适应缩放的稳定
-  function smoothBox(raw){
-    if(!raw) return null;
-    if(!_rtSmoothBox){ _rtSmoothBox = { x: raw.x, y: raw.y, width: raw.width, height: raw.height }; return _rtSmoothBox; }
-    const a = _RT_SMOOTH;
-    _rtSmoothBox.x     += (raw.x     - _rtSmoothBox.x)     * a;
-    _rtSmoothBox.y     += (raw.y     - _rtSmoothBox.y)     * a;
-    _rtSmoothBox.width += (raw.width - _rtSmoothBox.width) * a;
-    _rtSmoothBox.height+= (raw.height- _rtSmoothBox.height)* a;
-    return _rtSmoothBox;
+
+  // 丢脸状态机：返回本帧发型整体透明度（1=正常，0..1=淡出中，0=隐藏）
+  function _hairAlphaByTracking(now){
+    if(!_rtLastSeen) return 0;
+    const gone = now - _rtLastSeen;
+    if(gone <= _AR.LOST_HOLD_MS) return 1;                       // 短暂丢失：保持上一帧位置
+    const fade = gone - _AR.LOST_HOLD_MS;
+    if(fade >= _AR.LOST_FADE_MS) return 0;                       // 超过阈值：彻底隐藏
+    return 1 - fade / _AR.LOST_FADE_MS;                          // 缓慢淡出
   }
+
   function _rtTick(){
     if(!_rtRunning) return;
     _rtTimer = requestAnimationFrame(_rtTick);
@@ -862,21 +908,23 @@
     if(!v || !v.videoWidth || v.videoWidth < 2) return;
     const rc = $('realtimeCanvas');
     if(!rc) return;
+    const now = Date.now();
     const styleId = STATE.selectedStyleId;
     const meta = photoHairMeta(styleId);
     const rec = metaUsable(meta) ? getHairImg(styleId) : null;
     const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
-    // [AR-DEBUG] ⑤ 双阶滤波·第一阶：平滑关键点(drawLM)与包围盒(drawBox)。
-    //   检测成功时 raw=_rtLandmarks；检测失败/短暂丢脸时 _rtLandmarks 保留上一帧 → 发型不瞬间错位。
-    const drawLM = (_rtLandmarks && _rtLandmarks.length >= 68) ? smoothLandmarks(_rtLandmarks) : null;
-    const drawBox = (_rtBox) ? smoothBox(_rtBox) : null;   // 平滑包围盒（自适应缩放用）
+    const alpha = _hairAlphaByTracking(now);
+    const drawLM = _rtLandmarks ? smoothLandmarks(_rtLandmarks) : null;
     try{
-      if(canHair && drawLM){
-        // 渲染实时 AR：视频 + 发型贴图跟随头部
+      if(canHair && drawLM && alpha > 0.01){
+        // 摄像头画面（底层）+ 发型 PNG（顶层），同一镜像上下文，坐标系严格对齐
         renderRealtimeAR(rc, {
           video: v,
           landmarks: drawLM,
-          box: drawBox,
+          matrix: _rtMatrix,
+          source: _rtSource,
+          confidence: _rtConf,
+          hairAlpha: alpha,
           hairImg: rec.img,
           hairMeta: meta,
           colorId: STATE.colorId,
@@ -884,71 +932,132 @@
           fit: STATE.fit
         });
       }else{
-        // 仅显示镜像视频画面（无发型贴图 / 未开启真人试发 / 暂无人脸）
+        // 仅显示镜像视频画面（未开启真人试发 / 人脸已丢失超阈值）
         const ctx = rc.getContext('2d');
         ctx.clearRect(0,0,rc.width,rc.height);
         ctx.save(); ctx.translate(rc.width,0); ctx.scale(-1,1);
         ctx.drawImage(v,0,0,rc.width,rc.height); ctx.restore();
+        // 丢失超阈值 → 清空缓存，下次检到人脸时首帧直接吸附，不从旧位置滑入
+        if(canHair && alpha <= 0.01 && _rtSmoothLM){
+          _rtSmoothLM = null; _rtLandmarks = null;
+          if(typeof resetHairSmoothing === 'function') resetHairSmoothing();
+        }
       }
     }catch(e){ /* 渲染异常不影响主流程 */ }
-    // 检测：按间隔调用 face-api（异步，不阻塞渲染帧）
-    const now = Date.now();
+    // 检测：按间隔异步调用，不阻塞渲染帧
     if(now - _rtLastDetect >= _RT_DETECT_INTERVAL){
       _rtLastDetect = now;
       _rtDetectFace(v);
     }
   }
-  let _rtDetecting = false;      // 防止检测回调堆积（避免慢设备上面部识别并发占用）
+
+  let _rtDetecting = false;      // 防止检测回调堆积（慢设备上避免并发占用）
   async function _rtDetectFace(v){
-    if(typeof FaceAnalyzer === 'undefined') return;
-    if(_rtDetecting) return;     // 上一次检测尚未完成，跳过本次，避免重复占用
+    if(_rtDetecting) return;
     _rtDetecting = true;
     try{
-      await FaceAnalyzer.init();
-    }catch(e){ _rtDetecting = false; return; }
-    try{
+      /* ---------- ① 主路径：MediaPipe FaceMesh ---------- */
+      const MP = window.MPFace;
+      if(MP && MP.ready){
+        const r = MP.detect(v, performance.now());
+        if(r && r.landmarks && r.landmarks.length >= 468){
+          _switchSource('mp');         // 引擎切换瞬间重置平滑，避免发型从旧位置滑入
+          _rtLandmarks = r.landmarks;
+          _rtMatrix = r.matrix || null;
+          _rtConf = 1;                 // FaceLandmarker 已内置阈值过滤，输出即视为可信
+          _rtLastSeen = Date.now();
+          _rtNoFace = 0;
+          _kickFirstAnalysis(v);       // 首帧脸型/肤色/性别分析（仍由 face-api 完成，仅一次）
+          _rtDetecting = false;
+          return;
+        }
+        // MediaPipe 就绪但本帧无脸 → 交给状态机做保持/淡出
+        _rtOnFaceLost();
+        _rtDetecting = false;
+        return;
+      }
+
+      /* ---------- ② 降级路径：face-api 68 点 ---------- */
+      if(typeof FaceAnalyzer === 'undefined'){ _rtDetecting = false; return; }
+      try{ await FaceAnalyzer.init(); }catch(e){ _rtDetecting = false; return; }
       const res = await FaceAnalyzer.analyze(v);
       if(res && res.landmarks && res.landmarks.length >= 68){
+        _switchSource('api');
         _rtLandmarks = res.landmarks;
-        _rtBox = res.box || null;   // 人脸包围盒（用于实时自适应缩放）
-        _rtNoFace = 0; // 检到人脸，重置困难计数
-        // 首次检测成功 → 触发自动分析+推荐（仅一次）
-        if(!autoDetect.detected && !STATE.origCanvasEl){
-          autoDetect.detected = true;
-          stopAutoDetect();
-          updateAutoStatus('success', '● 已识别 · '+res.faceShape);
-          $('btnCapture').classList.remove('detecting');
-          $('btnCapture').textContent = '📷 重新检测';
-          // 写入分析结果
-          STATE.metrics = { ...STATE.metrics, ...res, hasDetection: true };
-          STATE.faceLandmarks = res.landmarks;
-          // 自动适配性别（用于后续推荐与UI）
-          if(res.genderEstimate){
-            STATE.metrics.gender = res.genderEstimate.gender;
-            STATE.metrics.genderConfidence = res.genderEstimate.confidence;
-            STATE.metrics.genderMethod = res.genderEstimate.method;
-            syncGenderUI();
-          }
-          // 立即自动加载系统匹配度最高的发型（实时AR试戴，无需手动确认）
-          const recs = recommendStyles(STATE.metrics, 3);
-          if(recs && recs[0]){ STATE.selectedStyleId = recs[0].style.id; }
-          displayMetrics();
-          refreshRecommend(); refreshPlans();
-          renderEffect();
-          const genderLabel = {female:'女',male:'男',all:'不限'}[STATE.metrics.gender]||'';
-          setStatus('AI已自动识别：'+STATE.metrics.faceShape+' · '+(STATE.metrics.skinTone==='warm'?'暖调':'冷调')+' · '+genderLabel+'　已自动试戴推荐发型，实时跟随头部移动');
-        }
+        _rtMatrix = null;
+        _rtConf = (res.confidence != null && isFinite(res.confidence)) ? res.confidence : 0.9;
+        _rtLastSeen = Date.now();
+        _rtNoFace = 0;
+        _applyFirstAnalysis(res);
+      }else{
+        _rtOnFaceLost();
       }
     }catch(e){
-      // 检测失败（无人脸 / 侧脸 / 暗光）：保留上帧 landmarks → 发型不立刻清空
-      _rtNoFace++;
-      if(_rtNoFace >= 3 && _rtNoFace < 10){
-        updateAutoStatus('cooldown', '● 追踪中 · 人脸短暂离开，发型保留');
-      }else if(_rtNoFace >= 10){
-        suggestFaceHint();
-      }
+      _rtOnFaceLost();
     }
-    _rtDetecting = false;   // 释放检测锁，允许下一周期继续追踪
+    _rtDetecting = false;
+  }
+
+  // 切换检测引擎（68点 ↔ 468点）：两套点集数量与坐标语义不同，
+  // 必须清空一阶/二阶平滑缓存，让新引擎首帧直接吸附，否则发型会从旧位置缓慢滑入。
+  function _switchSource(src){
+    if(_rtSource === src) return;
+    _rtSource = src;
+    _rtSmoothLM = null;
+    if(typeof resetHairSmoothing === 'function') resetHairSmoothing();
+  }
+
+  // 人脸丢失：只累计计数与提示，位置由 _hairAlphaByTracking 的时间窗口统一管理
+  function _rtOnFaceLost(){
+    _rtNoFace++;
+    if(_rtNoFace >= 3 && _rtNoFace < 12){
+      updateAutoStatus('cooldown', '● 追踪中 · 人脸短暂离开，发型保留');
+    }else if(_rtNoFace >= 12){
+      suggestFaceHint();
+    }
+  }
+
+  // MediaPipe 路径下，首帧仍需 face-api 做一次脸型/肤色/性别分析（只跑一次，不进渲染环）
+  let _firstAnalysisRunning = false;
+  function _kickFirstAnalysis(v){
+    if(autoDetect.detected || STATE.origCanvasEl || _firstAnalysisRunning) return;
+    if(typeof FaceAnalyzer === 'undefined') return;
+    _firstAnalysisRunning = true;
+    (async () => {
+      try{
+        await FaceAnalyzer.init();
+        const res = await FaceAnalyzer.analyze(v);
+        if(res && res.landmarks && res.landmarks.length >= 68) _applyFirstAnalysis(res);
+      }catch(e){ /* 首帧分析失败不影响 AR 追踪 */ }
+      _firstAnalysisRunning = false;
+    })();
+  }
+
+  // 首次检测成功 → 写入分析结果 + 自动推荐 + 自动试戴（仅一次）
+  function _applyFirstAnalysis(res){
+    if(autoDetect.detected || STATE.origCanvasEl) return;
+    autoDetect.detected = true;
+    stopAutoDetect();
+    updateAutoStatus('success', '● 已识别 · '+res.faceShape);
+    $('btnCapture').classList.remove('detecting');
+    $('btnCapture').textContent = '📷 重新检测';
+    STATE.metrics = { ...STATE.metrics, ...res, hasDetection: true };
+    STATE.faceLandmarks = res.landmarks;
+    if(res.genderEstimate){
+      STATE.metrics.gender = res.genderEstimate.gender;
+      STATE.metrics.genderConfidence = res.genderEstimate.confidence;
+      STATE.metrics.genderMethod = res.genderEstimate.method;
+      syncGenderUI();
+    }
+    const recs = recommendStyles(STATE.metrics, 3);
+    if(recs && recs[0]){ STATE.selectedStyleId = recs[0].style.id; }
+    displayMetrics();
+    refreshRecommend(); refreshPlans();
+    renderEffect();
+    const genderLabel = {female:'女',male:'男',all:'不限'}[STATE.metrics.gender]||'';
+    const engine = (_rtSource === 'mp') ? 'FaceMesh 468点' : '68点';
+    setStatus('AI已自动识别：'+STATE.metrics.faceShape+' · '+(STATE.metrics.skinTone==='warm'?'暖调':'冷调')+' · '+genderLabel
+              +'　已自动试戴推荐发型，'+engine+'实时跟随头部移动');
   }
 
   /* ---------- 自动检测人脸 ---------- */
