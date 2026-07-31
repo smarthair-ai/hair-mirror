@@ -167,7 +167,12 @@ const HAIRSTYLES = [
   { id: 33, img: "img/styles/s33.jpg", name: '空气刘海黑长直', source: '用户上传', suitableShapes: ['鹅蛋脸','长脸','菱形脸','方圆脸'], suitableCrowd: '16-34岁',
     feature: '低层次剪裁，轻薄空气刘海', difficulty: 2, difficultyLabel: '简单', silhouette: 'long', length: 'long', curl: 'straight', bang: 'air',
     styleTags: ['简约','通勤'], suitableColors: ['black','blacktea','darkbrown'],
-    modifies: '顺直长发拉长脸型、空气刘海弱化脸部棱角', careTip: '定期拉直或夹板顺发，刘海用卷梳吹出空气感，发尾护发油防毛躁。' }
+    modifies: '顺直长发拉长脸型、空气刘海弱化脸部棱角', careTip: '定期拉直或夹板顺发，刘海用卷梳吹出空气感，发尾护发油防毛躁。' },
+
+  { id: 34, img: "img/styles/s34.jpg", name: '纹理前刺短发', source: '用户上传', suitableShapes: ['圆脸','方脸','菱形脸'], suitableCrowd: '16-32岁',
+    feature: '顶部抓刺纹理，两侧渐层', difficulty: 3, difficultyLabel: '中等', silhouette: 'short', length: 'short', curl: 'straight', bang: 'short',
+    styleTags: ['简约','甜酷'], suitableColors: ['darkbrown','blacktea','coolbrown','ash'],
+    modifies: '顶部纹理拉长脸型、两侧渐层收窄轮廓', careTip: '发蜡指尖抓出前刺纹理，两侧定期推剪保持渐层。' }
 ];
 
 /* ---------------- 性别标注 ----------------
@@ -179,7 +184,7 @@ const STYLE_GENDER = {
   7:'female', 8:'female', 9:'female', 10:'female',
   11:'male', 12:'male', 13:'male', 14:'male', 15:'male',
   16:'male', 17:'male', 18:'male', 19:'male', 20:'male',
-  24:'female', 29:'female', 31:'female', 32:'female', 33:'female'
+  24:'female', 29:'female', 31:'female', 32:'female', 33:'female', 34:'male'
 };
 function styleGender(id){ return STYLE_GENDER[id] || 'female'; }
 // 按顾客性别返回候选发型池；gender 为空或 'all' 时返回全部
@@ -195,7 +200,7 @@ const SCENE_MAP = {
   11:'商务、通勤', 12:'校园、通勤', 13:'运动、夏日', 14:'通勤、运动',
   15:'运动、极简', 16:'商务、通勤', 17:'聚会、拍照', 18:'约会、通勤',
   19:'商务、正式场合', 20:'校园、潮流', 24:'校园、日常', 29:'通勤、约会',
-  31:'校园、日常', 32:'约会、聚会、婚礼', 33:'校园、通勤、日常'
+  31:'校园、日常', 32:'约会、聚会、婚礼', 33:'校园、通勤、日常', 34:'通勤、约会、校园'
 };
 function styleScene(id){ return SCENE_MAP[id] || '日常'; }
 
@@ -223,7 +228,8 @@ const HOMETIP_MAP = {
   29:'纹理烫用发蜡抓蓬发根，隔天清水拨松即可。',
   31:'发蜡抓碎吹蓬发根，每月修一次保持碎感。',
   32:'大卷用大号卷发棒冷定型，发根逆吹；脸颊碎发修剪。',
-  33:'空气刘海卷梳吹蓬，长直发夹板顺拉防毛躁，发尾点护发油。'
+  33:'空气刘海卷梳吹蓬，长直发夹板顺拉防毛躁，发尾点护发油。',
+  34:'发蜡取黄豆大小搓匀，指尖抓出前刺束感；头顶逆吹更蓬松。'
 };
 function styleHomeTip(id){ return HOMETIP_MAP[id] || '保持清洁与定期修剪即可。'; }
 
@@ -253,7 +259,8 @@ const AVOID_MAP = {
   29:'纹理烫需定期打理，细软发烫后易塌；圆脸配中长注意别显脸圆。',
   31:'碎剪偏中性帅气，想显温柔淑女者慎选。',
   32:'大波浪需卷发棒维持，极细软/受损发撑不住卷度显毛躁；圆胖脸配大卷易显头大。',
-  33:'黑长直放大脸型缺点，脸大/毛躁发质者显脸宽；空气刘海出油易塌。'
+  33:'黑长直放大脸型缺点，脸大/毛躁发质者显脸宽；空气刘海出油易塌。',
+  34:'前刺需一定发量支撑，发际线过高或头顶稀疏者抓不出纹理；发质极软易塌。'
 };
 function styleAvoid(id){ return AVOID_MAP[id] || '按脸型与发质谨慎评估，必要时先做局部试样。'; }
 
@@ -283,7 +290,8 @@ const CUTKEY_MAP = {
   29:'日系纹理烫，中长层次；发蜡抓蓬。',
   31:'日系碎剪短发，全头打薄轻盈；发蜡抓碎。',
   32:'长发大层次剪裁，大号卷发棒/大卷烫做松散大波浪，脸颊留修饰碎发。',
-  33:'低层次一刀平顺直，轻薄空气刘海取薄片打薄；发尾修齐。'
+  33:'低层次一刀平顺直，轻薄空气刘海取薄片打薄；发尾修齐。',
+  34:'顶部留4-6cm剪碎发纹理，前额抓前刺；两侧低位渐变(1-3mm)收干净。'
 };
 function styleCutKey(id){ return CUTKEY_MAP[id] || '按发型轮廓分区剪裁，结合脸型微调层次与留长。'; }
 
@@ -293,7 +301,7 @@ function styleCutKey(id){ return CUTKEY_MAP[id] || '按发型轮廓分区剪裁�
 const POPULAR_HEAT = {
   32:98, 33:92, 2:88, 29:85, 24:82, 7:80, 5:78,
   9:75, 31:73, 8:70, 10:68,
-  11:90, 16:84, 12:79, 14:76, 20:72, 13:66, 19:64, 15:60, 17:58, 18:55, 4:52, 3:50
+  11:90, 16:84, 12:79, 14:76, 20:72, 34:70, 13:66, 19:64, 15:60, 17:58, 18:55, 4:52, 3:50
 };
 function popularHeat(id){ return POPULAR_HEAT[id] || 40; }
 // 返回按热度排序的发型（可按性别过滤）
