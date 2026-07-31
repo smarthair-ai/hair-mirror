@@ -139,6 +139,19 @@ p{margin:0;} .sub{font-size:11px; color:var(--sub2); margin-top:1px; font-weight
 .cust-style-tag{font-size:13px; color:#c4ccde; background:rgba(255,255,255,.06);
   padding:6px 12px; border-radius:18px; font-weight:600;}
 .cust-style-tag span{color:var(--accent);}
+/* 推荐发型条 */
+.rec-strip{margin-bottom:10px; background:rgba(0,0,0,.2); border:1px solid var(--line2); border-radius:var(--radius-sm); padding:10px 12px;}
+.rec-strip-title{font-size:12px; color:var(--sub); font-weight:600; margin-bottom:8px;}
+.rec-strip-items{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x mandatory;}
+.rec-strip-items::-webkit-scrollbar{height:4px;}
+.rec-strip-items::-webkit-scrollbar-thumb{background:var(--sub2); border-radius:2px;}
+.rec-strip-item{flex:0 0 auto; width:86px; scroll-snap-align:start; cursor:pointer; transition:all .2s ease;}
+.rec-strip-item .rec-thumb{width:86px; height:104px; border-radius:10px; object-fit:cover; background:#0c1018; border:2px solid transparent; transition:all .2s ease;}
+.rec-strip-item .rec-name{font-size:10px; color:var(--sub); margin-top:4px; line-height:1.35; height:28px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+.rec-strip-item .rec-score{font-size:9px; color:var(--accent); font-weight:600;}
+.rec-strip-item:hover .rec-thumb{border-color:rgba(255,255,255,.3); transform:translateY(-2px);}
+.rec-strip-item.active .rec-thumb{border-color:var(--accent); box-shadow:0 4px 14px rgba(74,212,200,.15);}
+.rec-strip-item.active .rec-name{color:var(--accent);}
 .cust-toggles{display:flex; gap:12px; flex-wrap:wrap;}
 .panel-toggles{margin-bottom:8px;}
 .panel-toggles .switch{color:var(--ink); font-size:13px; min-height:40px;}

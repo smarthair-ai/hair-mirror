@@ -337,6 +337,34 @@
     renderEffect();
     const pc=document.querySelector('.customer-view'); if(pc) pc.scrollIntoView({behavior:'smooth',block:'start'});
     updateAllActive();
+    updateRecStripActive();
+  }
+
+  // 右侧推荐条：自动检测后展示 top3 推荐发型
+  function renderRecStrip(){
+    const rec = recommendStyles(STATE.metrics, 3); // top3
+    const strip = $('recStrip');
+    const items = $('recStripItems');
+    if(!rec.length){ if(strip) strip.hidden=true; return; }
+    items.innerHTML='';
+    rec.forEach((r, idx)=>{
+      const st = r.style;
+      const el = document.createElement('div');
+      el.className='rec-strip-item'+(st.id===STATE.selectedStyleId?' active':'');
+      el.dataset.id=st.id;
+      el.innerHTML=`<img class="rec-thumb" src="${st.img}" alt="${st.name}"><div class="rec-score">匹配 ${r.score} 分</div><div class="rec-name">${st.name}</div>`;
+      el.onclick = ()=>{ applyStyle(st.id); };
+      items.appendChild(el);
+    });
+    strip.hidden=false;
+  }
+  function updateRecStripActive(){
+    const items = document.querySelectorAll('.rec-strip-item');
+    items.forEach(el=>el.classList.toggle('active', parseInt(el.dataset.id,10)===STATE.selectedStyleId));
+  }
+  function clearRecStrip(){
+    const strip=$('recStrip'); if(strip) strip.hidden=true;
+    const items=$('recStripItems'); if(items) items.innerHTML='';
   }
 
   function refreshRecommend(){
@@ -366,6 +394,8 @@
       el.style.cursor='pointer';
       el.onclick=()=>applyStyle(st.id);
     });
+    // 同步刷新右侧推荐条 top3
+    renderRecStrip();
   }
 
   /* ---------- 页面切换（试戴/发型库/热门/季节/存档） ---------- */
