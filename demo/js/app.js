@@ -4,6 +4,11 @@
 (function(){
   'use strict';
 
+  // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
+  const BUILD_VERSION = '2026-07-31T18:45+08:00';
+  window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
+  console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
+
   const $ = id => document.getElementById(id);
   const STATE = {
     mode: 'camera',
@@ -1421,6 +1426,17 @@
     if(typeof FaceAnalyzer!=='undefined'){ FaceAnalyzer.init().catch(()=>{}); }
     // 静默预加载全部 31 张真发 PNG
     preloadAllHairImgs();
+    // 构建版本徽标（运行时注入，不改前端结构）：右下角显示当前部署版本，便于核对是否为最新
+    try{
+      const badge = document.createElement('div');
+      badge.id = 'buildBadge';
+      badge.textContent = 'build ' + BUILD_VERSION;
+      badge.style.cssText = 'position:fixed;right:6px;bottom:6px;z-index:99999;'
+        + 'font:10px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#9fb0ff;'
+        + 'background:rgba(10,14,22,.62);padding:2px 7px;border-radius:7px;'
+        + 'letter-spacing:.3px;pointer-events:none;user-select:none;';
+      document.body.appendChild(badge);
+    }catch(e){}
   }
 
   window.addEventListener('load', init);
