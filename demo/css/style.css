@@ -184,8 +184,11 @@ p{margin:0;} .sub{font-size:11px; color:var(--sub2); margin-top:1px; font-weight
 #cam{width:100%; height:100%; object-fit:cover; transform:scaleX(-1);}
 #origCanvas{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:var(--radius-sm);}
 #origCanvas.orig{display:none;}
+/* 实时AR预览画布：覆盖在摄像头画面之上，显示发型叠加效果 */
+.realtime-overlay{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:var(--radius-sm); z-index:3; pointer-events:none;}
+.realtime-overlay.hidden{display:none;}
 .cam-hint{position:absolute; left:0; right:0; bottom:6px; text-align:center; color:#fff; font-size:11px;
-  background:rgba(0,0,0,.5); padding:5px; backdrop-filter:blur(8px);}
+  background:rgba(0,0,0,.5); padding:5px; backdrop-filter:blur(8px); z-index:4;}
 /* 自动检测状态指示器 */
 .auto-status{position:absolute; top:8px; left:50%; transform:translateX(-50%);
   padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; z-index:5;

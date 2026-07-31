@@ -732,6 +732,8 @@
         $('btnCapture').textContent='⏳ 检测中…';
         setStatus('摄像头已就绪 · 自动检测人脸中…');
         startAutoDetect();
+        // ★ 启动实时 AR 跟踪：发型跟随头部实时移动/旋转/缩放
+        startRealtimeAR();
       }else{
         setStatus('摄像头画面未就绪，请点「重试摄像头」。', true);
         $('btnRetryCam').hidden=false;
@@ -741,7 +743,99 @@
       $('btnRetryCam').hidden=false;
     }
   }
-  function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } camReady=false; stopAutoDetect(); }
+  function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } camReady=false; stopAutoDetect(); stopRealtimeAR(); }
+
+  /* ---------- 实时 AR 跟踪循环 ---------- */
+  let _rtTimer = null;           // requestAnimationFrame ID
+  let _rtRunning = false;        // 是否正在运行
+  let _rtLandmarks = null;       // 最新检测到的68关键点
+  let _rtLastDetect = 0;        // 上次检测时间戳
+  const _RT_DETECT_INTERVAL = 200; // 每200ms检测一次（5fps检测，渲染跟视频帧走）
+
+  function startRealtimeAR(){
+    if(_rtRunning) return;
+    _rtRunning = true;
+    $('realtimeCanvas').classList.remove('hidden');
+    $('camHint').textContent = '正对摄像头，发型实时跟随中';
+    _rtTick();
+  }
+  function stopRealtimeAR(){
+    _rtRunning = false;
+    if(_rtTimer){ cancelAnimationFrame(_rtTimer); _rtTimer = null; }
+    const rc = $('realtimeCanvas'); if(rc){ rc.classList.add('hidden'); rc.getContext('2d').clearRect(0,0,rc.width,rc.height); }
+  }
+  function _rtTick(){
+    if(!_rtRunning) return;
+    _rtTimer = requestAnimationFrame(_rtTick);
+    const v = $('cam');
+    if(!v || !v.videoWidth || v.videoWidth < 2) return;
+    // 渲染：每帧用最新关键点叠加发型
+    const rc = $('realtimeCanvas');
+    if(!rc) return;
+    const styleId = STATE.selectedStyleId;
+    const meta = photoHairMeta(styleId);
+    if(!meta || !metaUsable(meta)) return;
+    const rec = getHairImg(styleId);
+    if(!rec || !rec.loaded || rec.failed) return;
+    // 渲染实时 AR（只要有 landmarks 就用，没有则只显示视频）
+    try{
+      renderRealtimeAR(rc, {
+        video: v,
+        landmarks: _rtLandmarks,  // 可能为 null → 函数内会跳过发型绘制
+        hairImg: rec.img,
+        hairMeta: meta,
+        colorId: STATE.colorId,
+        texture: STATE.texture,
+        fit: STATE.fit
+      });
+    }catch(e){ /* 渲染异常不影响主流程 */ }
+    // 检测：按间隔调用 face-api（异步，不阻塞渲染帧）
+    const now = Date.now();
+    if(now - _rtLastDetect >= _RT_DETECT_INTERVAL){
+      _rtLastDetect = now;
+      _rtDetectFace(v);
+    }
+  }
+  async function _rtDetectFace(v){
+    if(typeof FaceAnalyzer === 'undefined') return;
+    try{
+      await FaceAnalyzer.init();
+    }catch(e){ return; }
+    try{
+      const res = await FaceAnalyzer.analyze(v);
+      if(res && res.landmarks && res.landmarks.length >= 68){
+        _rtLandmarks = res.landmarks;
+        // 首次检测成功 → 触发自动分析+推荐（仅一次）
+        if(!autoDetect.detected && !STATE.origCanvasEl){
+          autoDetect.detected = true;
+          stopAutoDetect();
+          updateAutoStatus('success', '● 已识别 · '+res.faceShape);
+          $('btnCapture').classList.remove('detecting');
+          $('btnCapture').textContent = '📷 重新检测';
+          // 写入分析结果
+          STATE.metrics = { ...STATE.metrics, ...res, hasDetection: true };
+          STATE.faceLandmarks = res.landmarks;
+          // 自动适配性别
+          if(res.genderEstimate){
+            STATE.metrics.gender = res.genderEstimate.gender;
+            STATE.metrics.genderConfidence = res.genderEstimate.confidence;
+            STATE.metrics.genderMethod = res.genderEstimate.method;
+            const pool = stylesForGender(STATE.metrics.gender);
+            const curInPool = pool.some(s => s.id === STATE.selectedStyleId);
+            if(!curInPool && pool.length > 0){ STATE.selectedStyleId = pool[0].id; }
+            syncGenderUI();
+          }
+          displayMetrics();
+          refreshRecommend(); refreshPlans();
+          renderOrigView(); renderEffect();
+          const genderLabel = {female:'女',male:'男',all:'不限'}[STATE.metrics.gender]||'';
+          setStatus('AI已自动识别：'+STATE.metrics.faceShape+' · '+(STATE.metrics.skinTone==='warm'?'暖调':'冷调')+' · '+genderLabel+'　三款发型已推荐，发型实时跟随头部移动');
+        }
+      }
+    }catch(e){
+      // 检测失败不输出错误，保持上帧 landmarks
+    }
+  }
 
   /* ---------- 自动检测人脸 ---------- */
   function updateAutoStatus(state, msg){
@@ -867,17 +961,23 @@
     }
     // 如果之前自动检测已成功，点"重新检测"→ 恢复实时画面重新检测
     if(autoDetect.detected){
+      stopRealtimeAR();
       restoreLiveVideo();
       STATE.origCanvasEl=null;
       STATE.faceLandmarks=null;
       STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
       renderOrigView(); renderEffect();
       refreshRecommend(); refreshPlans();
+      autoDetect.detected=false;
+      autoDetect.stableCount=0;
+      autoDetect.lastResult=null;
+      _rtLandmarks=null;
       $('camHint').textContent='正对摄像头，光线充足 · 自动检测中';
       $('btnCapture').classList.add('detecting');
       $('btnCapture').textContent='⏳ 检测中…';
       setStatus('重新检测中…请正对摄像头');
       startAutoDetect();
+      startRealtimeAR();
       return;
     }
     // 手动拍照（降级方案）

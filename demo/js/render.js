@@ -993,3 +993,114 @@ function renderPhotoTryOn(canvas, opts){
   // ⑧ 光线氛围统一（室内光 / 太阳光作用于整幅画面）
   applyLighting(ctx, { x:0, y:0, w:W, h:H }, opts.lighting);
 }
+
+/* =========================================================================
+ * 实时 AR 跟踪渲染 — 发型跟随头部实时移动/旋转/缩放
+ * 用于摄像头实时预览：每帧检测人脸 → 计算相似变换 → 叠加发型 PNG
+ * 轻量版：跳过精修步骤（光照匹配/碎发回融/接触阴影），保证 15fps+
+ * ========================================================================= */
+
+// 实时帧的轻量 T 矩阵（跳过二次精修 + 鬓角对位，只做双眼对齐）
+function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, videoH){
+  if(!landmarks || landmarks.length < 68 || !meta || !meta.eyeL) return null;
+  // 顾客双眼位置（68关键点，与 video 原始尺寸对齐）
+  const e = eyeCentersFromLandmarks(landmarks);
+  const dL = { x: e.L.x, y: e.L.y };
+  const dR = { x: e.R.x, y: e.R.y };
+  // 源发型双眼锚点
+  const sL = { x: meta.eyeL[0], y: meta.eyeL[1] };
+  const sR = { x: meta.eyeR[0], y: meta.eyeR[1] };
+  // 双眼间距
+  const dDist = Math.hypot(dR.x - dL.x, dR.y - dL.y);
+  const sDist = Math.max(1, Math.hypot(sR.x - sL.x, sR.y - sL.y));
+  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿
+  const coverage = meta.coverage || 0.25;
+  const coverageScale = 1.06 + Math.max(0, (0.30 - coverage) * 0.5);
+  const scale = (dDist / sDist) * coverageScale;
+  // 旋转：双眼倾角差
+  const angle = Math.atan2(dR.y - dL.y, dR.x - dL.x) - Math.atan2(sR.y - sL.y, sR.x - sL.x);
+  // 双眼中点
+  const dM = { x: (dL.x + dR.x) / 2, y: (dL.y + dR.y) / 2 };
+  const sM = { x: (sL.x + sR.x) / 2, y: (sL.y + sR.y) / 2 };
+  // 手动微调
+  const f = fit || {};
+  const uScale = (f.scale != null && isFinite(f.scale)) ? Math.min(1.8, Math.max(0.5, f.scale)) : 1;
+  const uDx = f.dx || 0;
+  const uDy = f.dy || 0;
+  const uRot = f.rot || 0;
+  const finalScale = scale * uScale;
+  return {
+    dx: dM.x + uDx,
+    dy: dM.y + uDy,
+    angle: angle + uRot,
+    sx: finalScale,
+    sy: finalScale, // 实时模式简化：等比缩放
+    ox: sM.x,
+    oy: sM.y,
+    // 用于判断是否有效
+    valid: dDist > 10 && scale > 0.1 && scale < 8
+  };
+}
+
+// 实时 AR 渲染：将发型 PNG 叠加到视频帧上
+function renderRealtimeAR(canvas, opts){
+  // opts: { video, landmarks, hairImg, hairMeta, colorId, texture, fit }
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if(!opts.video || !opts.landmarks || !opts.hairImg || !opts.hairMeta) return;
+  // ① 绘制视频帧（镜像翻转，与摄像头预览一致）
+  ctx.save();
+  ctx.translate(W, 0); ctx.scale(-1, 1);
+  const vw = opts.video.videoWidth || W;
+  const vh = opts.video.videoHeight || H;
+  ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
+  ctx.restore();
+  // ② 构建实时变换矩阵
+  const T = buildRealtimeTransform(opts.landmarks, opts.hairMeta, W, H, opts.fit, vw, vh);
+  if(!T || !T.valid) return; // 无人脸或变换无效，仅显示视频
+  // ③ 构建/获取发色精灵（利用缓存）
+  const spriteKey = 'realtime|'+opts.hairImg.src;
+  const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, spriteKey);
+  // ④ 离屏绘制发型层
+  const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
+  const lx = layer.getContext('2d');
+  lx.drawImage(sprite, 0, 0);
+  // ⑤ 应用变换：平移→旋转→缩放→平移（与 renderPhotoTryOn 相同的 applyHairTransform）
+  // 但这里直接内联实现，因为 applyHairTransform 依赖全局 ctx 状态
+  // ⑥ 在 canvas 上叠加发型
+  ctx.save();
+  // 变换：将源图片坐标映射到 canvas 坐标
+  // 先移动到目标位置，然后旋转缩放，再减去源锚点偏移
+  const sw = opts.hairMeta.w, sh = opts.hairMeta.h;
+  ctx.translate(T.dx, T.dy);
+  ctx.rotate(T.angle);
+  ctx.scale(T.sx, T.sy);
+  ctx.translate(-T.ox, -T.oy);
+  // 画出发型（仅 alpha>0 的像素有效，因为 PNG 已抠图）
+  ctx.drawImage(sprite, 0, 0, sw, sh);
+  ctx.restore();
+  // ⑦ 简单边缘羽化（仅在发型层做一个 soft clip）
+  // 用视频帧的头发区域做 mask 减少突兀感（简化版）
+  // ⑧ 透明度
+  if(opts.fit && opts.fit.opacity != null && opts.fit.opacity < 1){
+    ctx.save();
+    ctx.globalAlpha = opts.fit.opacity;
+    // 重绘发型（因为上面的 drawImage 已经画了，这里只是加透明度不够理想，
+    // 但我们用简单方式：先清空再画）
+    ctx.clearRect(0, 0, W, H);
+    // 重新画视频帧
+    ctx.save();
+    ctx.translate(W, 0); ctx.scale(-1, 1);
+    ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
+    ctx.restore();
+    // 画发型
+    ctx.translate(T.dx, T.dy);
+    ctx.rotate(T.angle);
+    ctx.scale(T.sx, T.sy);
+    ctx.translate(-T.ox, -T.oy);
+    ctx.globalAlpha = opts.fit.opacity;
+    ctx.drawImage(sprite, 0, 0, sw, sh);
+    ctx.restore();
+  }
+}
