@@ -790,6 +790,8 @@
   let _rtRunning = false;        // 是否正在运行
   let _rtLandmarks = null;       // 最新检测到的68关键点（视频原生坐标）
   let _rtSmoothLM = null;        // 指数平滑后的关键点（消除抖动/检测波动造成的发型剧烈晃动）
+  let _rtBox = null;             // 最新人脸包围盒（视频原生坐标）
+  let _rtSmoothBox = null;       // 平滑后包围盒（双阶滤波·第一阶之一）
   let _rtLastDetect = 0;        // 上次检测时间戳
   let _rtNoFace = 0;             // 连续未检到人脸的帧计数（用于软提示）
   // 平滑系数：越大越跟手，越小越稳（抗抖动）。0.35 在跟随性与稳定性间取得平衡
@@ -811,6 +813,8 @@
     _rtRunning = true;
     _rtNoFace = 0;
     _rtSmoothLM = null;   // 重置平滑缓存，首帧直接贴合（避免从上次残留位置滑入）
+    _rtBox = null; _rtSmoothBox = null;
+    if(typeof resetHairSmoothing === 'function') resetHairSmoothing(); // 重置发型变换参数二阶平滑
     const rc = $('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
     $('camHint').textContent = '正对摄像头，发型实时跟随中';
     _rtTick();
@@ -835,6 +839,17 @@
     }
     return _rtSmoothLM;
   }
+  // 对包围盒做指数平滑（与关键点平滑同系数），用于自适应缩放的稳定
+  function smoothBox(raw){
+    if(!raw) return null;
+    if(!_rtSmoothBox){ _rtSmoothBox = { x: raw.x, y: raw.y, width: raw.width, height: raw.height }; return _rtSmoothBox; }
+    const a = _RT_SMOOTH;
+    _rtSmoothBox.x     += (raw.x     - _rtSmoothBox.x)     * a;
+    _rtSmoothBox.y     += (raw.y     - _rtSmoothBox.y)     * a;
+    _rtSmoothBox.width += (raw.width - _rtSmoothBox.width) * a;
+    _rtSmoothBox.height+= (raw.height- _rtSmoothBox.height)* a;
+    return _rtSmoothBox;
+  }
   function _rtTick(){
     if(!_rtRunning) return;
     _rtTimer = requestAnimationFrame(_rtTick);
@@ -848,12 +863,14 @@
     const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
     // 平滑关键点：检测成功时 raw=_rtLandmarks；检测失败/短暂丢脸时 _rtLandmarks 保留上一帧 → 发型不瞬间错位
     const drawLM = (_rtLandmarks && _rtLandmarks.length >= 68) ? smoothLandmarks(_rtLandmarks) : null;
+    const drawBox = (_rtBox) ? smoothBox(_rtBox) : null;   // 平滑包围盒（自适应缩放用）
     try{
       if(canHair && drawLM){
         // 渲染实时 AR：视频 + 发型贴图跟随头部
         renderRealtimeAR(rc, {
           video: v,
           landmarks: drawLM,
+          box: drawBox,
           hairImg: rec.img,
           hairMeta: meta,
           colorId: STATE.colorId,
@@ -887,6 +904,7 @@
       const res = await FaceAnalyzer.analyze(v);
       if(res && res.landmarks && res.landmarks.length >= 68){
         _rtLandmarks = res.landmarks;
+        _rtBox = res.box || null;   // 人脸包围盒（用于实时自适应缩放）
         _rtNoFace = 0; // 检到人脸，重置困难计数
         // 首次检测成功 → 触发自动分析+推荐（仅一次）
         if(!autoDetect.detected && !STATE.origCanvasEl){

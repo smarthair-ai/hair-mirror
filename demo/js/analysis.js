@@ -152,6 +152,10 @@ const FaceAnalyzer = (() => {
       metrics,
       landmarks: pts,
       confidence: detection.detection ? detection.detection.score : null, // 人脸检测置信度（0~1），用于过滤弱识别
+      box: (detection.detection && detection.detection.box) ? {
+        x: detection.detection.box.x, y: detection.detection.box.y,
+        width: detection.detection.box.width, height: detection.detection.box.height
+      } : null, // 人脸包围盒（视频原生坐标）：用于实时自适应缩放（远近/头型）
       genderEstimate: genderEst  // { gender, confidence, method }
     };
   }
