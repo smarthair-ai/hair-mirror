@@ -789,11 +789,23 @@
   let _rtRunning = false;        // 是否正在运行
   let _rtLandmarks = null;       // 最新检测到的68关键点
   let _rtLastDetect = 0;        // 上次检测时间戳
-  const _RT_DETECT_INTERVAL = 200; // 每200ms检测一次（5fps检测，渲染跟视频帧走）
+  let _rtNoFace = 0;             // 连续未检到人脸的帧计数（用于软提示）
+  // 移动端放宽检测频率以省算力（桌面 5fps，移动 3.3fps）
+  const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 300 : 200;
+
+  // 检测困难时的软提示（不阻断流程）
+  function suggestFaceHint(){
+    const v=$('cam');
+    const mob = (window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+    $('camHint').textContent = mob
+      ? '未检到人脸 · 请正对摄像头、调亮光线、避免侧脸；或点「上传照片」'
+      : '未检到人脸 · 请正对摄像头、调亮环境光、避免侧脸与逆光；或点「上传照片」';
+  }
 
   function startRealtimeAR(){
     if(_rtRunning) return;
     _rtRunning = true;
+    _rtNoFace = 0;
     const rc = $('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
     $('camHint').textContent = '正对摄像头，发型实时跟随中';
     _rtTick();
@@ -850,6 +862,7 @@
       const res = await FaceAnalyzer.analyze(v);
       if(res && res.landmarks && res.landmarks.length >= 68){
         _rtLandmarks = res.landmarks;
+        _rtNoFace = 0; // 检到人脸，重置困难计数
         // 首次检测成功 → 触发自动分析+推荐（仅一次）
         if(!autoDetect.detected && !STATE.origCanvasEl){
           autoDetect.detected = true;
@@ -878,7 +891,9 @@
         }
       }
     }catch(e){
-      // 检测失败不输出错误，保持上帧 landmarks
+      // 检测失败（无人脸 / 侧脸 / 暗光）：保持上帧 landmarks，并累计困难帧做软提示
+      _rtNoFace++;
+      if(_rtNoFace >= 10) suggestFaceHint(); // 约 2~3 秒仍检不到才提示，避免频繁打扰
     }
   }
 

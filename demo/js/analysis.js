@@ -7,6 +7,40 @@ const FaceAnalyzer = (() => {
   let modelsLoaded = false;
   let loadPromise = null;
 
+  // 是否移动端（用于下调检测分辨率以省算力）
+  function isMobile(){
+    return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        || (window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+  }
+
+  // ★★★ 人脸检测鲁棒性可调参数（侧脸 / 暗光场景）★★★
+  // 调参位置：修改下方 scoreThreshold 即可调整检测灵敏度
+  //   - 越低越容易检到人脸（侧脸 / 暗光更友好），代价是误检略增
+  //   - 越高越严格（误检少），但侧脸 / 暗光容易漏检
+  // 原值为 0.5，已下调至 0.3；若仍漏检可继续降到 0.2~0.25。
+  const DETECT_CONFIG = {
+    inputSize: isMobile() ? 224 : 320, // 移动端降低输入分辨率以省算力
+    scoreThreshold: 0.3               // 默认置信阈值（已下调）
+  };
+
+  // 渐进式重试：先按标准阈值检测，检不到再逐步放宽（更低阈值 / 更低分辨率），
+  // 专门应对侧脸、暗光、遮挡等难例，避免一次失败就放弃。
+  async function detectWithRetry(mediaEl){
+    const levels = [
+      { inputSize: DETECT_CONFIG.inputSize, scoreThreshold: DETECT_CONFIG.scoreThreshold },
+      { inputSize: 320, scoreThreshold: 0.2 },
+      { inputSize: 256, scoreThreshold: 0.15 }
+    ];
+    for(const lv of levels){
+      try{
+        const opt = new faceapi.TinyFaceDetectorOptions(lv);
+        const d = await faceapi.detectSingleFace(mediaEl, opt).withFaceLandmarks();
+        if(d) return d;
+      }catch(e){ /* 该档失败则尝试更宽松一档 */ }
+    }
+    return null;
+  }
+
   async function init() {
     if (modelsLoaded) return true;
     if (loadPromise) return loadPromise;
@@ -77,10 +111,13 @@ const FaceAnalyzer = (() => {
     const Himg = mediaEl.videoHeight || mediaEl.naturalHeight || mediaEl.height;
     if (!Wimg || !Himg) throw new Error('无法读取图像尺寸');
 
-    const detectOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
-    const detection = await faceapi.detectSingleFace(mediaEl, detectOpts)
-      .withFaceLandmarks();
-    if (!detection) throw new Error('未检测到人脸，请正对摄像头或切换手动模式');
+    const detection = await detectWithRetry(mediaEl);
+    if (!detection) {
+      const tip = isMobile()
+        ? '未检测到人脸：请正对摄像头、调亮光线，或点「上传照片」'
+        : '未检测到人脸：请正对摄像头、避免侧脸与暗光，或点「上传照片」';
+      throw new Error(tip);
+    }
 
     const pts = detection.landmarks.positions;
     const faceShape = classifyFaceShape(pts);
