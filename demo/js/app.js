@@ -318,19 +318,18 @@
     // 从其他页面点选发型时回到工作台
     if(STATE.page !== 'studio') switchPage('studio');
     renderEffect();
-    updateStyleListActive();
+    updateRecCardsActive();
     updateAllActive();
     updateRecStripActive();
   }
 
-  // 右侧推荐条：自动检测后展示 top3 推荐发型
+  // 右侧推荐条（原 recStrip 已合并为 3 张推荐卡片，保留为安全空函数）
   function renderRecStrip(){
+    const items = $('recStripItems'); if(!items) return;
     const rec = recommendStyles(STATE.metrics, 3); // top3
-    const strip = $('recStrip');
-    const items = $('recStripItems');
-    if(!rec.length){ if(strip) strip.hidden=true; return; }
+    if(!rec.length){ const s=$('recStrip'); if(s) s.hidden=true; return; }
     items.innerHTML='';
-    rec.forEach((r, idx)=>{
+    rec.forEach((r)=>{
       const st = r.style;
       const el = document.createElement('div');
       el.className='rec-strip-item'+(st.id===STATE.selectedStyleId?' active':'');
@@ -339,7 +338,7 @@
       el.onclick = ()=>{ applyStyle(st.id); };
       items.appendChild(el);
     });
-    strip.hidden=false;
+    const s=$('recStrip'); if(s) s.hidden=false;
   }
   function updateRecStripActive(){
     const items = document.querySelectorAll('.rec-strip-item');
@@ -350,45 +349,35 @@
     const items=$('recStripItems'); if(items) items.innerHTML='';
   }
 
-  // 右侧发型选择列表：展示全部发型缩略图，点选即试戴；top3 推荐加徽标
-  function renderStyleList(){
-    const box = $('styleList'); if(!box) return;
-    const top3 = new Set(recommendStyles(STATE.metrics, 3).map(r=>r.style.id));
-    let list = HAIRSTYLES;
-    if(STATE.filterTag!=='all') list = list.filter(s=>s.styleTags.includes(STATE.filterTag));
+  // 右侧：为你推荐 3 张卡片（系统匹配），点选即切换左侧实时试戴
+  function renderRecCards(){
+    const box = $('recCards'); if(!box) return;
+    const recs = recommendStyles(STATE.metrics, 3);
+    const tags = ['日常百搭','大胆改变','个性专属'];
     box.innerHTML='';
-    list.forEach(st=>{
-      const item=document.createElement('div');
-      item.className='style-item'+(st.id===STATE.selectedStyleId?' active':'');
-      item.dataset.id=st.id;
-      if(top3.has(st.id)){
-        const b=document.createElement('div'); b.className='si-badge'; b.textContent='推荐'; item.appendChild(b);
-      }
-      const fav=document.createElement('button');
-      const on=STATE.favorites.includes(st.id);
-      fav.className='si-fav'+(on?' on':'');
-      fav.textContent=on?'★':'☆'; fav.title='收藏';
-      fav.onclick=(e)=>{ e.stopPropagation(); toggleFav(st.id);
-        const nowOn=STATE.favorites.includes(st.id);
-        fav.classList.toggle('on', nowOn); fav.textContent=nowOn?'★':'☆'; };
-      item.appendChild(fav);
-      item.appendChild(createRealThumb(st, null, 'si-thumb'));
-      const nm=document.createElement('div'); nm.className='si-name'; nm.textContent=st.name; item.appendChild(nm);
-      item.onclick=()=>applyStyle(st.id);
-      box.appendChild(item);
+    recs.forEach((r,i)=>{
+      const st = r.style;
+      const card=document.createElement('div');
+      card.className='rec-card'+(st.id===STATE.selectedStyleId?' active':'');
+      card.dataset.id=st.id;
+      const badge=document.createElement('div'); badge.className='rc-badge'; badge.textContent=tags[i]||'推荐'; card.appendChild(badge);
+      card.appendChild(createRealThumb(st, null, 'rc-thumb'));
+      const body=document.createElement('div'); body.className='rc-body';
+      const nm=document.createElement('div'); nm.className='rc-name'; nm.textContent=st.name; body.appendChild(nm);
+      const mt=document.createElement('div'); mt.className='rc-meta'; mt.textContent=(st.sceneTags&&st.sceneTags[0])||''; body.appendChild(mt);
+      card.appendChild(body);
+      card.onclick=()=>applyStyle(st.id);
+      box.appendChild(card);
     });
-    const bc=$('browserCount'); if(bc) bc.textContent=list.length;
   }
-  function updateStyleListActive(){
-    document.querySelectorAll('#styleList .style-item').forEach(el=>{
-      const on = parseInt(el.dataset.id,10)===STATE.selectedStyleId;
-      el.classList.toggle('active', on);
-      if(on) el.scrollIntoView({behavior:'smooth', block:'nearest'});
+  function updateRecCardsActive(){
+    document.querySelectorAll('#recCards .rec-card').forEach(el=>{
+      el.classList.toggle('active', parseInt(el.dataset.id,10)===STATE.selectedStyleId);
     });
   }
 
   function refreshRecommend(){
-    renderStyleList();
+    renderRecCards();
   }
 
   function refreshPlans(){
@@ -411,9 +400,8 @@
       el.style.cursor='pointer';
       el.onclick=()=>applyStyle(st.id);
     });
-    // 同步刷新右侧推荐条 top3 与发型列表徽标
-    renderRecStrip();
-    renderStyleList();
+    // 同步刷新右侧 3 张推荐卡片
+    renderRecCards();
   }
 
   /* ---------- 页面切换（试戴/发型库/热门/季节/存档） ---------- */
@@ -873,27 +861,31 @@
           // 写入分析结果
           STATE.metrics = { ...STATE.metrics, ...res, hasDetection: true };
           STATE.faceLandmarks = res.landmarks;
-          // 自动适配性别
+          // 自动适配性别（用于后续推荐与UI）
           if(res.genderEstimate){
             STATE.metrics.gender = res.genderEstimate.gender;
             STATE.metrics.genderConfidence = res.genderEstimate.confidence;
             STATE.metrics.genderMethod = res.genderEstimate.method;
-            const pool = stylesForGender(STATE.metrics.gender);
-            const curInPool = pool.some(s => s.id === STATE.selectedStyleId);
-            if(!curInPool && pool.length > 0){ STATE.selectedStyleId = pool[0].id; }
             syncGenderUI();
           }
+          // 立即自动加载系统匹配度最高的发型（实时AR试戴，无需手动确认）
+          const recs = recommendStyles(STATE.metrics, 3);
+          if(recs && recs[0]){ STATE.selectedStyleId = recs[0].style.id; }
           displayMetrics();
           refreshRecommend(); refreshPlans();
-          renderOrigView(); renderEffect();
+          renderEffect();
           const genderLabel = {female:'女',male:'男',all:'不限'}[STATE.metrics.gender]||'';
-          setStatus('AI已自动识别：'+STATE.metrics.faceShape+' · '+(STATE.metrics.skinTone==='warm'?'暖调':'冷调')+' · '+genderLabel+'　三款发型已推荐，发型实时跟随头部移动');
+          setStatus('AI已自动识别：'+STATE.metrics.faceShape+' · '+(STATE.metrics.skinTone==='warm'?'暖调':'冷调')+' · '+genderLabel+'　已自动试戴推荐发型，实时跟随头部移动');
         }
       }
     }catch(e){
-      // 检测失败（无人脸 / 侧脸 / 暗光）：保持上帧 landmarks，并累计困难帧做软提示
+      // 检测失败（无人脸 / 侧脸 / 暗光）：保留上帧 landmarks → 发型不立刻清空
       _rtNoFace++;
-      if(_rtNoFace >= 10) suggestFaceHint(); // 约 2~3 秒仍检不到才提示，避免频繁打扰
+      if(_rtNoFace >= 3 && _rtNoFace < 10){
+        updateAutoStatus('cooldown', '● 追踪中 · 人脸短暂离开，发型保留');
+      }else if(_rtNoFace >= 10){
+        suggestFaceHint();
+      }
     }
   }
 

@@ -171,30 +171,14 @@
       <p id="statusMsg" class="status"></p>
     </section>
 
-    <!-- ---------- 右侧：发型选择列表 ---------- -->
+    <!-- ---------- 右侧：为你推荐 3 款发型预览卡片 ---------- -->
     <section class="style-browser">
       <div class="browser-head">
-        <h2>💇 发型选择 <span class="mini-note">点任意发型即刻试戴</span></h2>
-        <span id="browserCount" class="badge">0</span>
+        <h2>💇 为你推荐 <span class="mini-note">点卡片即切换试戴</span></h2>
       </div>
-
-      <!-- 推荐条 top3（自动检测后显示） -->
-      <div id="recStrip" class="rec-strip" hidden>
-        <div class="rec-strip-title">🎯 为你推荐</div>
-        <div id="recStripItems" class="rec-strip-items"></div>
-      </div>
-
-      <!-- 风格筛选（控制下方列表） -->
-      <div class="filters browser-filters" id="filterBox">
-        <button class="flt active" data-tag="all">全部</button>
-        <button class="flt" data-tag="简约">简约</button>
-        <button class="flt" data-tag="甜酷">甜酷</button>
-        <button class="flt" data-tag="成熟">成熟</button>
-        <button class="flt" data-tag="通勤">通勤</button>
-      </div>
-
-      <!-- 全部发型（可滚动） -->
-      <div id="styleList" class="style-grid"></div>
+      <!-- 3 张推荐卡片（对应系统匹配的 3 款发型，点击切换左侧实时试戴） -->
+      <div id="recCards" class="rec-cards"></div>
+      <p class="hint browser-hint">系统按脸型 / 肤色 / 发质匹配 3 款，左侧实时跟随试戴；想看更多发型可到顶部「本店发型库」。</p>
     </section>
   </div>
 
