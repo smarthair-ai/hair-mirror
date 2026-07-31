@@ -117,57 +117,45 @@
     }
   }
 
+  // 统一试戴画布：实时视频模式由 _rtTick 每帧绘制，其余模式在此静态绘制到 realtimeCanvas
   function renderEffect(){
-    paintOne($('effectCanvas'), STATE.selectedStyleId);
     const stA = getStyleById(STATE.selectedStyleId);
     $('curStyleName').textContent = stA ? stA.name : '—';
-    // 对比款 B
-    if(STATE.compareOn && STATE.compareId){
-      paintOne($('effectCanvasB'), STATE.compareId);
-      const stB = getStyleById(STATE.compareId);
-      const nb = $('curStyleNameB'); if(nb) nb.textContent = stB ? stB.name : '—';
-    }
-    // 提示语（当前款 A 的试戴状态）
-    const hint = $('tryOnHint');
-    const useTryOn = STATE.tryOn && tryOnAvailable() && STATE.view === 'front';
-    if(hint){
-      if(!STATE.tryOn) hint.textContent = '';
-      else if(!tryOnAvailable()) hint.textContent = '📷 拍照或上传照片后，发型将自动贴合到你的头部。';
-      else {
-        const meta = photoHairMeta(STATE.selectedStyleId);
-        const rec = metaUsable(meta) ? getHairImg(STATE.selectedStyleId) : null;
-        if(meta && rec && !rec.loaded && !rec.failed) hint.textContent = '正在加载真发素材…';
-        else if(meta && rec && rec.loaded && !rec.failed){
-          if(STATE.faceLandmarks){
-            const isZero = STATE.fit.scale===1 && STATE.fit.dx===0 && STATE.fit.dy===0 && STATE.fit.rot===0 && (STATE.fit.opacity==null||STATE.fit.opacity===1);
-            hint.textContent = isZero
-              ? '✓ 已锁定真实人头位置：对齐头顶与左右鬓角，顾客移动时发型自动跟随；边缘羽化、光照色温匹配原照片。如需微调可用下方滑块（含透明度）。'
-              : '✓ 人头自动跟随 + 手动微调叠加中。点「↺ 重置」可回到自动贴合位置。';
-          }else{
-            hint.textContent = '⚠ 未检测到人脸关键点，已降级按画面中心估算佩戴（建议重拍正脸照，即可自动跟随人头位置）；如需微调可展开下方滑块。';
-          }
+    const live = STATE.mode==='camera' && camReady && stream && !STATE.origCanvasEl;
+    if(!live) renderTryOnCanvas();
+  }
+
+  // 把当前发型绘制到唯一的 realtimeCanvas（照片模式 / 手动模式）
+  function renderTryOnCanvas(){
+    const rc = $('realtimeCanvas'); if(!rc) return;
+    if(STATE.origCanvasEl){
+      // 照片试戴：用真发抠图素材叠加
+      const meta = photoHairMeta(STATE.selectedStyleId);
+      const rec = metaUsable(meta) ? getHairImg(STATE.selectedStyleId) : null;
+      if(meta && rec && rec.loaded && !rec.failed && STATE.tryOn){
+        renderPhotoTryOn(rc, Object.assign(currentOpts(), {
+          photo: STATE.origCanvasEl, landmarks: STATE.faceLandmarks,
+          hairImg: rec.img, hairMeta: meta, fit: STATE.fit }));
+      } else {
+        const ctx = rc.getContext('2d'); ctx.clearRect(0,0,rc.width,rc.height);
+        drawCover(ctx, STATE.origCanvasEl, rc.width, rc.height);
+        if(!(meta && rec && rec.loaded && !rec.failed)){
+          ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,rc.width,rc.height);
+          ctx.fillStyle='#fff'; ctx.font='22px sans-serif'; ctx.textAlign='center';
+          ctx.fillText('该款暂无贴图素材', rc.width/2, rc.height/2);
         }
-        else hint.textContent = '该款暂无抠发素材，已用绘制效果展示轮廓。';
       }
+      return;
     }
-    updateRealRef();
+    // 手动 / 无照片：参数化模型预览
+    renderScene(rc, currentOpts());
   }
 
-  // 原图-效果图并排显隐
-  function syncPreviewLayout(){
-    const showOrig = STATE.sideOn;
-    $('origFig').style.display = showOrig ? '' : 'none';
-    $('effectFig').style.display = '';
-  }
+  // 原图-效果图并排显隐（已移除双预览画布，保留为安全空函数）
+  function syncPreviewLayout(){}
 
-  function renderOrigView(){
-    const c = $('origView'); const ctx = c.getContext('2d');
-    ctx.clearRect(0,0,c.width,c.height);
-    if(STATE.origCanvasEl){ ctx.fillStyle='#222'; ctx.fillRect(0,0,c.width,c.height); drawCover(ctx, STATE.origCanvasEl, c.width, c.height); }
-    else { ctx.fillStyle='#eef1f6'; ctx.fillRect(0,0,c.width,c.height);
-      ctx.fillStyle='#9aa3b2'; ctx.font='28px sans-serif'; ctx.textAlign='center';
-      ctx.fillText('原图区（拍照后显示）', c.width/2, c.height/2); }
-  }
+  // 原图预览（已移除 origView 画布，保留为安全空函数）
+  function renderOrigView(){}
 
   function renderThumb(canvas, style, colorId){
     renderScene(canvas, { style, metrics:STATE.metrics, view:'front',
@@ -189,12 +177,7 @@
     return img;
   }
 
-  function updateRealRef(){
-    const st = getStyleById(STATE.selectedStyleId);
-    const img = $('realRefImg');
-    if(st && st.img){ img.src = st.img; img.hidden = false; }
-    else { img.hidden = true; }
-  }
+  function updateRealRef(){} // 真人参考图已移除，保留安全空函数
 
   /* ---------- 发色 UI ---------- */
   function colorName(id){
@@ -335,7 +318,7 @@
     // 从其他页面点选发型时回到工作台
     if(STATE.page !== 'studio') switchPage('studio');
     renderEffect();
-    const pc=document.querySelector('.customer-view'); if(pc) pc.scrollIntoView({behavior:'smooth',block:'start'});
+    updateStyleListActive();
     updateAllActive();
     updateRecStripActive();
   }
@@ -367,11 +350,45 @@
     const items=$('recStripItems'); if(items) items.innerHTML='';
   }
 
+  // 右侧发型选择列表：展示全部发型缩略图，点选即试戴；top3 推荐加徽标
+  function renderStyleList(){
+    const box = $('styleList'); if(!box) return;
+    const top3 = new Set(recommendStyles(STATE.metrics, 3).map(r=>r.style.id));
+    let list = HAIRSTYLES;
+    if(STATE.filterTag!=='all') list = list.filter(s=>s.styleTags.includes(STATE.filterTag));
+    box.innerHTML='';
+    list.forEach(st=>{
+      const item=document.createElement('div');
+      item.className='style-item'+(st.id===STATE.selectedStyleId?' active':'');
+      item.dataset.id=st.id;
+      if(top3.has(st.id)){
+        const b=document.createElement('div'); b.className='si-badge'; b.textContent='推荐'; item.appendChild(b);
+      }
+      const fav=document.createElement('button');
+      const on=STATE.favorites.includes(st.id);
+      fav.className='si-fav'+(on?' on':'');
+      fav.textContent=on?'★':'☆'; fav.title='收藏';
+      fav.onclick=(e)=>{ e.stopPropagation(); toggleFav(st.id);
+        const nowOn=STATE.favorites.includes(st.id);
+        fav.classList.toggle('on', nowOn); fav.textContent=nowOn?'★':'☆'; };
+      item.appendChild(fav);
+      item.appendChild(createRealThumb(st, null, 'si-thumb'));
+      const nm=document.createElement('div'); nm.className='si-name'; nm.textContent=st.name; item.appendChild(nm);
+      item.onclick=()=>applyStyle(st.id);
+      box.appendChild(item);
+    });
+    const bc=$('browserCount'); if(bc) bc.textContent=list.length;
+  }
+  function updateStyleListActive(){
+    document.querySelectorAll('#styleList .style-item').forEach(el=>{
+      const on = parseInt(el.dataset.id,10)===STATE.selectedStyleId;
+      el.classList.toggle('active', on);
+      if(on) el.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+  }
+
   function refreshRecommend(){
-    const rec = recommendStyles(STATE.metrics, 12);
-    let list = rec;
-    if(STATE.filterTag!=='all') list = rec.filter(x=>x.style.styleTags.includes(STATE.filterTag));
-    buildRecCards(list, $('recGrid'), true);
+    renderStyleList();
   }
 
   function refreshPlans(){
@@ -394,8 +411,9 @@
       el.style.cursor='pointer';
       el.onclick=()=>applyStyle(st.id);
     });
-    // 同步刷新右侧推荐条 top3
+    // 同步刷新右侧推荐条 top3 与发型列表徽标
     renderRecStrip();
+    renderStyleList();
   }
 
   /* ---------- 页面切换（试戴/发型库/热门/季节/存档） ---------- */
@@ -603,15 +621,6 @@
   function downloadCanvas(canvas, name){
     const a=document.createElement('a'); a.download=name+'.png'; a.href=canvas.toDataURL('image/png'); a.click();
   }
-  function shotSideBySide(){
-    const c=makeCanvas(760,920); const ctx=c.getContext('2d');
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
-    ctx.fillStyle='#333'; ctx.font='bold 26px sans-serif'; ctx.textAlign='center';
-    ctx.fillText('原图', 195, 40); ctx.fillText('效果图', 565, 40);
-    ctx.drawImage($('origView'), 20, 60, 350, 440);
-    ctx.drawImage($('effectCanvas'), 390, 60, 350, 440);
-    return c;
-  }
   function buildBarberCard(){
     const tmp=makeCanvas(800,880);
     if(STATE.tryOn && tryOnAvailable()){
@@ -785,39 +794,45 @@
   function startRealtimeAR(){
     if(_rtRunning) return;
     _rtRunning = true;
-    $('realtimeCanvas').classList.remove('hidden');
+    const rc = $('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
     $('camHint').textContent = '正对摄像头，发型实时跟随中';
     _rtTick();
   }
   function stopRealtimeAR(){
     _rtRunning = false;
     if(_rtTimer){ cancelAnimationFrame(_rtTimer); _rtTimer = null; }
-    const rc = $('realtimeCanvas'); if(rc){ rc.classList.add('hidden'); rc.getContext('2d').clearRect(0,0,rc.width,rc.height); }
+    // 注意：不再隐藏/清空 realtimeCanvas —— 它是唯一试戴画布，照片/手动模式下仍需显示。
   }
   function _rtTick(){
     if(!_rtRunning) return;
     _rtTimer = requestAnimationFrame(_rtTick);
     const v = $('cam');
     if(!v || !v.videoWidth || v.videoWidth < 2) return;
-    // 渲染：每帧用最新关键点叠加发型
     const rc = $('realtimeCanvas');
     if(!rc) return;
     const styleId = STATE.selectedStyleId;
     const meta = photoHairMeta(styleId);
-    if(!meta || !metaUsable(meta)) return;
-    const rec = getHairImg(styleId);
-    if(!rec || !rec.loaded || rec.failed) return;
-    // 渲染实时 AR（只要有 landmarks 就用，没有则只显示视频）
+    const rec = metaUsable(meta) ? getHairImg(styleId) : null;
+    const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
     try{
-      renderRealtimeAR(rc, {
-        video: v,
-        landmarks: _rtLandmarks,  // 可能为 null → 函数内会跳过发型绘制
-        hairImg: rec.img,
-        hairMeta: meta,
-        colorId: STATE.colorId,
-        texture: STATE.texture,
-        fit: STATE.fit
-      });
+      if(canHair){
+        // 渲染实时 AR：视频 + 发型贴图跟随头部
+        renderRealtimeAR(rc, {
+          video: v,
+          landmarks: _rtLandmarks,  // 可能为 null → 函数内会跳过发型绘制
+          hairImg: rec.img,
+          hairMeta: meta,
+          colorId: STATE.colorId,
+          texture: STATE.texture,
+          fit: STATE.fit
+        });
+      }else{
+        // 仅显示镜像视频画面（无发型贴图 / 未开启真人试发）
+        const ctx = rc.getContext('2d');
+        ctx.clearRect(0,0,rc.width,rc.height);
+        ctx.save(); ctx.translate(rc.width,0); ctx.scale(-1,1);
+        ctx.drawImage(v,0,0,rc.width,rc.height); ctx.restore();
+      }
     }catch(e){ /* 渲染异常不影响主流程 */ }
     // 检测：按间隔调用 face-api（异步，不阻塞渲染帧）
     const now = Date.now();
@@ -934,6 +949,7 @@
   }
   async function triggerAutoAnalysis(v, res){
     stopAutoDetect(); // 停止检测循环
+    stopRealtimeAR(); // 停止实时AR循环，避免覆盖定格照片试戴
     updateAutoStatus('success', '● 已识别 · ' + res.faceShape);
     $('camHint').textContent='已自动识别 ✓ 点「重新检测」可再次检测';
     $('btnCapture').classList.remove('detecting');
@@ -960,26 +976,24 @@
     return c;
   }
 
-  // 拍照后在采集区显示定格照片（替代实时视频画面）
+  // 拍照 / 上传后在主窗口显示定格照片（替代实时视频画面）
   function showSnapInCapture(frame){
-    const v=$('cam'); const oc2=$('origCanvas');
-    // 暂停视频流，避免画面继续变动
+    const v=$('cam');
     try{ v.pause(); }catch(e){}
-    // 把定格帧画到 origCanvas（与 cam-wrap 同比例）
-    const c=oc2; const ctx=c.getContext('2d');
-    ctx.clearRect(0,0,c.width,c.height);
-    drawCover(ctx, frame, c.width, c.height);
-    // 显示定格 canvas，隐藏实时视频
-    oc2.classList.remove('orig');  // 移除 display:none
     v.style.display='none';
-    $('camHint').textContent='已拍照 ✓ 点「拍照」可重拍，或切换到「手动/收集表」';
+    $('origCanvas').classList.add('orig'); // 定格画布始终隐藏，统一用 realtimeCanvas 显示
+    const rc=$('realtimeCanvas'); rc.classList.remove('hidden');
+    const ctx=rc.getContext('2d'); ctx.clearRect(0,0,rc.width,rc.height);
+    drawCover(ctx, frame, rc.width, rc.height); // 立即显示定格照片，便于确认取景
+    $('camHint').textContent='已拍照 ✓ 分析后发型自动贴合，或点「重新检测」重拍';
   }
   // 恢复实时视频画面（重拍 / 重试时调用）
   function restoreLiveVideo(){
     const v=$('cam'); const oc2=$('origCanvas');
-    oc2.classList.add('orig');  // 重新隐藏定格 canvas
+    oc2.classList.add('orig');  // 重新隐藏定格画布
     v.style.display='';
     try{ v.play(); }catch(e){}
+    const rc=$('realtimeCanvas'); if(rc) rc.classList.remove('hidden');
   }
 
   async function doCapture(){
@@ -989,14 +1003,13 @@
       $('btnRetryCam').hidden=false;
       return;
     }
-    // 如果之前自动检测已成功，点"重新检测"→ 恢复实时画面重新检测
-    if(autoDetect.detected){
+    // 已自动检测 / 已上传照片 → 回到实时摄像头重新检测
+    if(autoDetect.detected || STATE.origCanvasEl){
       stopRealtimeAR();
       restoreLiveVideo();
       STATE.origCanvasEl=null;
       STATE.faceLandmarks=null;
       STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
-      renderOrigView(); renderEffect();
       refreshRecommend(); refreshPlans();
       autoDetect.detected=false;
       autoDetect.stableCount=0;
@@ -1011,13 +1024,14 @@
       return;
     }
     // 手动拍照（降级方案）
+    stopRealtimeAR();
     const frame=snapFrame(v);
     const oc=makeCanvas(720,880); drawCover(oc.getContext('2d'), frame, 720, 880);
     STATE.origCanvasEl=oc;
     STATE.faceLandmarks=null;
     STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
     showSnapInCapture(frame);
-    renderOrigView(); renderEffect();
+    renderEffect();
     setStatus('已拍照 ✓ 正在AI分析…');
     await runAnalysis(oc, true);
   }
@@ -1029,9 +1043,10 @@
       STATE.origCanvasEl=oc;
       STATE.faceLandmarks=null;
       STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
-      // 上传照片也在采集区显示定格照片
+      stopRealtimeAR();
+      // 上传照片在主窗口显示定格照片
       showSnapInCapture(img);
-      renderOrigView(); renderEffect();
+      renderEffect();
       setStatus('照片已载入 ✓ 正在AI分析…');
       await runAnalysis(oc, true);
       URL.revokeObjectURL(img.src);
@@ -1103,6 +1118,25 @@
     $('statusMsg').textContent='已按收集表/手动信息生成方案。';
   }
 
+  // 摄像头实时AR ↔ 手动/收集表 模式切换
+  function toggleManualMode(){
+    if(STATE.mode==='manual'){
+      STATE.mode='camera';
+      const bm=$('btnManual'); if(bm) bm.textContent='手动/收集表';
+      $('manualWrap').hidden=true; $('camWrap').hidden=false;
+      startCamera();
+    }else{
+      STATE.mode='manual';
+      const bm=$('btnManual'); if(bm) bm.textContent='← 返回摄像头';
+      $('manualWrap').hidden=false;
+      stopCamera();
+      STATE.origCanvasEl=null; STATE.faceLandmarks=null;
+      STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
+      $('camHint').textContent='手动/收集表模式 · 下方为参数化预览';
+      renderEffect();
+    }
+  }
+
   /* ---------- 贴合微调（缩放 / 偏移 / 旋转） ---------- */
   function clampFit(){
     const f=STATE.fit;
@@ -1127,23 +1161,24 @@
   }
   function resetFit(){ setFit({scale:1, dx:0, dy:0, rot:0, opacity:1}); }
 
-  // 效果图手势：单指拖动/双指捏合 → 调整发型贴合（缩放 / 偏移 / 旋转）
+  // 试戴画面手势：单指拖动 / 双指捏合 → 调整发型贴合（缩放 / 偏移 / 旋转）
   function bindFitGestures(){
-    const cv=$('effectCanvas');
+    const cv=$('camWrap'); if(!cv) return;
+    const rc=$('realtimeCanvas');
     const pointers=new Map();     // pointerId -> {x,y}
     let pinchDist=0, pinchAng=0;
-    const cw=()=>cv.width/Math.max(1, cv.getBoundingClientRect().width); // 画布坐标换算系数
+    // 屏幕像素 → 画布(720×880)坐标 的换算系数
+    const cw=()=> (rc?rc.height:880)/Math.max(1, cv.getBoundingClientRect().height);
 
     cv.addEventListener('pointerdown', e=>{
-      if(!(STATE.tryOn && tryOnAvailable() && STATE.view==='front')) return;
-      cv.setPointerCapture(e.pointerId);
+      if(!STATE.tryOn) return;
+      try{ cv.setPointerCapture(e.pointerId); }catch(_){}
       pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       if(pointers.size===2){
         const [a,b]=[...pointers.values()];
         pinchDist=Math.hypot(a.x-b.x, a.y-b.y);
         pinchAng=Math.atan2(a.y-b.y, a.x-b.x);
       }
-      cv.classList.add('dragging');
       e.preventDefault();
     });
     cv.addEventListener('pointermove', e=>{
@@ -1161,11 +1196,11 @@
       }
       e.preventDefault();
     });
-    const up=e=>{ pointers.delete(e.pointerId); pinchDist=0; pinchAng=0; if(pointers.size===0) cv.classList.remove('dragging'); };
+    const up=e=>{ pointers.delete(e.pointerId); pinchDist=0; pinchAng=0; };
     cv.addEventListener('pointerup', up);
     cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', e=>{
-      if(!(STATE.tryOn && tryOnAvailable() && STATE.view==='front')) return;
+      if(!STATE.tryOn) return;
       e.preventDefault();
       setFit({ scale: STATE.fit.scale * (e.deltaY<0 ? 1.04 : 0.96) });
     }, {passive:false});
@@ -1173,18 +1208,16 @@
 
   /* ---------- 事件绑定 ---------- */
   function bind(){
-    // 采集模式切换
-    $('btnCamera').onclick=()=>{ STATE.mode='camera';
-      $('btnCamera').classList.add('active'); $('btnManual').classList.remove('active');
-      $('camWrap').hidden=false; $('manualWrap').hidden=true; startCamera(); };
-    $('btnManual').onclick=()=>{ STATE.mode='manual';
-      $('btnManual').classList.add('active'); $('btnCamera').classList.remove('active');
-      $('camWrap').hidden=true; $('manualWrap').hidden=false; stopCamera(); };
+    // 摄像头实时AR ↔ 手动/收集表 切换
+    $('btnManual').onclick=toggleManualMode;
 
     $('btnCapture').onclick=doCapture;
     $('btnRetryCam').onclick=startCamera;
     $('btnUpload').onclick=()=>$('fileInput').click();
     $('fileInput').onchange=e=>{ if(e.target.files[0]){ doUpload(e.target.files[0]); e.target.value=''; } };
+    // 手动/收集表 应用
+    $('btnManApply').onclick=applyManual;
+    $('btnManApply2').onclick=applyManual;
 
     // 视角
     document.querySelectorAll('.viewBtn').forEach(b=>b.onclick=()=>{
@@ -1215,8 +1248,6 @@
       document.querySelectorAll('.flt').forEach(x=>x.classList.remove('active'));
       b.classList.add('active'); STATE.filterTag=b.dataset.tag; refreshRecommend();
     });
-    // 并排
-    $('toggleSide').onchange=e=>{ STATE.sideOn=e.target.checked; syncPreviewLayout(); };
     // 真人试发开关
     $('toggleTryOn').onchange=e=>{ STATE.tryOn=e.target.checked; renderEffect(); };
     // 贴合微调滑块
@@ -1227,16 +1258,9 @@
     if($('fitOpacity')) $('fitOpacity').oninput=e=>setFit({opacity:parseFloat(e.target.value)});
     $('btnFitReset').onclick=resetFit;
     bindFitGestures();
-    // 真人参考图
-    $('toggleRealImg').onchange=e=>{ $('realRefImg').classList.toggle('show', e.target.checked); };
-    // 截图
-    $('btnShot').onclick=()=>{
-      const cv = STATE.sideOn ? shotSideBySide() : $('effectCanvas');
-      downloadCanvas(cv, '发型效果图_'+Date.now());
-    };
+    // 截图（保存到唯一试戴画布）
+    $('btnShot').onclick=()=>{ downloadCanvas($('realtimeCanvas'), '发型AR效果_'+Date.now()); };
     $('btnBarber').onclick=()=>{ downloadCanvas(buildBarberCard(), '理发师沟通卡_'+Date.now()); };
-    // 手动应用
-    $('btnManApply').onclick=applyManual;
 
     // 顶部页面导航
     document.querySelectorAll('.navtab').forEach(t=>t.onclick=()=>switchPage(t.dataset.page));
@@ -1248,14 +1272,13 @@
       });
     });
     $('btnQuiz').onclick=applyQuiz;
-    // 双方案对比
-    $('toggleCompare').onchange=e=>setCompare(e.target.checked);
-    $('cmpSelect').onchange=e=>{ STATE.compareId=parseInt(e.target.value,10); renderEffect(); };
-    $('btnSwap').onclick=()=>{
-      const a=STATE.selectedStyleId; STATE.selectedStyleId=STATE.compareId; STATE.compareId=a;
-      STATE.fit={scale:1,dx:0,dy:0,rot:0}; syncFitUI();
-      buildCompareSelect(); renderEffect(); updateAllActive();
-    };
+    // 季节专题切换
+    document.querySelectorAll('.stab').forEach(b=>b.onclick=()=>{
+      document.querySelectorAll('.stab').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); STATE.seasonKey=b.dataset.s; renderSeason();
+    });
+    // 存档
+    $('btnArchive').onclick=archiveCurrent;
     // 季节专题切换
     document.querySelectorAll('.stab').forEach(b=>b.onclick=()=>{
       document.querySelectorAll('.stab').forEach(x=>x.classList.remove('active'));
@@ -1312,9 +1335,7 @@
     readQuiz();
     syncGenderUI();
     displayMetrics();
-    renderOrigView();
     renderEffect();
-    syncPreviewLayout();
     refreshRecommend();
     refreshPlans();
     renderAllStyles();
