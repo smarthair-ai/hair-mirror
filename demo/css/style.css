@@ -186,6 +186,18 @@ p{margin:0;} .sub{font-size:11px; color:var(--sub2); margin-top:1px; font-weight
 #origCanvas.orig{display:none;}
 .cam-hint{position:absolute; left:0; right:0; bottom:6px; text-align:center; color:#fff; font-size:11px;
   background:rgba(0,0,0,.5); padding:5px; backdrop-filter:blur(8px);}
+/* 自动检测状态指示器 */
+.auto-status{position:absolute; top:8px; left:50%; transform:translateX(-50%);
+  padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; z-index:5;
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  transition:all .3s ease; white-space:nowrap; pointer-events:none;}
+.auto-status.detecting{background:rgba(108,140,255,.25); color:#fff; border:1px solid rgba(108,140,255,.3); animation:autoPulse 1.6s ease-in-out infinite;}
+.auto-status.success{background:rgba(74,212,200,.2); color:#fff; border:1px solid rgba(74,212,200,.3);}
+.auto-status.cooldown{background:rgba(255,255,255,.06); color:#8a90b4; border:1px solid rgba(255,255,255,.08);}
+.auto-status.fail{background:rgba(224,112,112,.15); color:#e09090; border:1px solid rgba(224,112,112,.2);}
+@keyframes autoPulse{0%,100%{opacity:.7} 50%{opacity:1}}
+/* 拍照按钮检测中状态 */
+#btnCapture.detecting{opacity:.7; pointer-events:none;}
 .manual-wrap{display:flex; flex-direction:column; gap:8px;}
 .manual-wrap label{font-size:12px; color:var(--sub); display:flex; flex-direction:column; gap:4px;}
 .manual-wrap select{padding:10px; min-height:var(--tap); border:1px solid var(--line2); border-radius:10px; font-size:14px;

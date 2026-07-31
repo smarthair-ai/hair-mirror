@@ -29,6 +29,18 @@
     fit: { scale:1, dx:0, dy:0, rot:0, opacity:1 }, // 手动贴合微调：缩放/左右偏移/上下偏移/旋转(弧度)/透明度
   };
 
+  /* ---------- 自动检测状态 ---------- */
+  const autoDetect = {
+    active: false,          // 是否启用自动检测
+    timer: null,            // setInterval 句柄
+    lastResult: null,       // 上一次检测结果 { faceShape, skinTone, gender }
+    stableCount: 0,         // 连续相同结果计数
+    STABLE_THRESHOLD: 2,    // 需要连续多少次相同才触发
+    cooldownUntil: 0,       // 冷却期结束时间戳 (Date.now())
+    COOLDOWN_MS: 3000,      // 冷却3秒
+    detected: false,        // 是否已成功检测并触发分析
+  };
+
   /* ---------- 工具 ---------- */
   function loadFavs(){ try{ const ids=JSON.parse(localStorage.getItem('hairFavs')||'[]'); return ids.filter(id=>HAIRSTYLES.some(s=>s.id===id)); }catch(e){ return []; } }
   function saveFavs(){ localStorage.setItem('hairFavs', JSON.stringify(STATE.favorites)); }
@@ -715,8 +727,11 @@
       });
       camReady = $('cam').videoWidth>0;
       if(camReady){
-        $('camHint').textContent='正对摄像头，光线充足，点击「拍照」';
-        setStatus('摄像头已就绪 ✓');
+        $('camHint').textContent='正对摄像头，光线充足 · 自动检测中';
+        $('btnCapture').classList.add('detecting');
+        $('btnCapture').textContent='⏳ 检测中…';
+        setStatus('摄像头已就绪 · 自动检测人脸中…');
+        startAutoDetect();
       }else{
         setStatus('摄像头画面未就绪，请点「重试摄像头」。', true);
         $('btnRetryCam').hidden=false;
@@ -726,7 +741,90 @@
       $('btnRetryCam').hidden=false;
     }
   }
-  function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } camReady=false; }
+  function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } camReady=false; stopAutoDetect(); }
+
+  /* ---------- 自动检测人脸 ---------- */
+  function updateAutoStatus(state, msg){
+    const el=$('autoDetectStatus');
+    if(!el) return;
+    el.hidden=false;
+    el.className='auto-status '+state;
+    el.textContent=msg;
+  }
+  function startAutoDetect(){
+    if(autoDetect.active) return;
+    autoDetect.active=true;
+    autoDetect.detected=false;
+    autoDetect.lastResult=null;
+    autoDetect.stableCount=0;
+    autoDetect.cooldownUntil=0;
+    updateAutoStatus('detecting', '● 正在检测人脸…');
+    // 每500ms检测一次
+    autoDetect.timer=setInterval(detectFaceFromVideo, 500);
+  }
+  function stopAutoDetect(){
+    autoDetect.active=false;
+    if(autoDetect.timer){ clearInterval(autoDetect.timer); autoDetect.timer=null; }
+    const el=$('autoDetectStatus'); if(el) el.hidden=true;
+  }
+  async function detectFaceFromVideo(){
+    if(!autoDetect.active) return;
+    // 冷却期跳过
+    if(Date.now() < autoDetect.cooldownUntil){
+      if(!autoDetect.detected) updateAutoStatus('cooldown', '◌ 冷却中…');
+      return;
+    }
+    const v=$('cam');
+    if(!v || !v.videoWidth || v.videoWidth<2) return;
+    // 确保模型已加载
+    if(typeof FaceAnalyzer==='undefined') return;
+    try{
+      await FaceAnalyzer.init();
+    }catch(e){ return; }
+    try{
+      const res=await FaceAnalyzer.analyze(v);
+      if(!res || !res.faceShape) return; // 未检测到人脸
+      const key=res.faceShape+'|'+res.skinTone+'|'+(res.genderEstimate?res.genderEstimate.gender:'unknown');
+      // 与上次结果对比
+      if(autoDetect.lastResult===key){
+        autoDetect.stableCount++;
+        updateAutoStatus('detecting', '● 检测到人脸 · 稳定中 ' + autoDetect.stableCount + '/' + autoDetect.STABLE_THRESHOLD);
+        if(autoDetect.stableCount >= autoDetect.STABLE_THRESHOLD && !autoDetect.detected){
+          // 触发自动分析
+          autoDetect.detected=true;
+          await triggerAutoAnalysis(v, res);
+        }
+      }else{
+        autoDetect.lastResult=key;
+        autoDetect.stableCount=1;
+        updateAutoStatus('detecting', '● 检测到人脸 · 稳定中 1/' + autoDetect.STABLE_THRESHOLD);
+      }
+    }catch(e){
+      // 检测失败（无人脸），重置计数
+      if(autoDetect.lastResult!==null && !autoDetect.detected){
+        autoDetect.lastResult=null;
+        autoDetect.stableCount=0;
+        updateAutoStatus('detecting', '● 正在检测人脸…');
+      }
+    }
+  }
+  async function triggerAutoAnalysis(v, res){
+    stopAutoDetect(); // 停止检测循环
+    updateAutoStatus('success', '● 已识别 · ' + res.faceShape);
+    $('camHint').textContent='已自动识别 ✓ 点「重新检测」可再次检测';
+    $('btnCapture').classList.remove('detecting');
+    $('btnCapture').textContent='📷 重新检测';
+    // 执行与手动拍照相同的分析流程
+    const frame=snapFrame(v);
+    const oc=makeCanvas(720,880); drawCover(oc.getContext('2d'), frame, 720, 880);
+    STATE.origCanvasEl=oc;
+    STATE.faceLandmarks=null;
+    STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
+    showSnapInCapture(frame);
+    renderOrigView(); renderEffect();
+    setStatus('正在AI分析…');
+    await runAnalysis(oc, true);
+  }
 
   // 从 video 定格一帧（做镜像翻转，与预览一致）
   function snapFrame(v){
@@ -767,17 +865,30 @@
       $('btnRetryCam').hidden=false;
       return;
     }
-    // ① 先定格照片 —— 这一步必定成功，照片立即显示
+    // 如果之前自动检测已成功，点"重新检测"→ 恢复实时画面重新检测
+    if(autoDetect.detected){
+      restoreLiveVideo();
+      STATE.origCanvasEl=null;
+      STATE.faceLandmarks=null;
+      STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
+      renderOrigView(); renderEffect();
+      refreshRecommend(); refreshPlans();
+      $('camHint').textContent='正对摄像头，光线充足 · 自动检测中';
+      $('btnCapture').classList.add('detecting');
+      $('btnCapture').textContent='⏳ 检测中…';
+      setStatus('重新检测中…请正对摄像头');
+      startAutoDetect();
+      return;
+    }
+    // 手动拍照（降级方案）
     const frame=snapFrame(v);
     const oc=makeCanvas(720,880); drawCover(oc.getContext('2d'), frame, 720, 880);
     STATE.origCanvasEl=oc;
     STATE.faceLandmarks=null;
     STATE.fit={scale:1, dx:0, dy:0, rot:0, opacity:1}; syncFitUI();
-    // 在采集区显示定格照片（替代实时视频）
     showSnapInCapture(frame);
     renderOrigView(); renderEffect();
     setStatus('已拍照 ✓ 正在AI分析…');
-    // ② 再尝试 AI 分析 —— 直接分析 720×880 原图，关键点与试发画布 1:1 对齐
     await runAnalysis(oc, true);
   }
 
@@ -1086,10 +1197,11 @@
     if(warmBtn) warmBtn.onclick = renderWarmWord;
     // 仅在摄像头模式下启动（避免手动模式下浪费设备资源）
     if(STATE.mode==='camera') startCamera();
-    // 页面可见性：切到后台时暂停摄像头，回来时恢复
+    // 页面可见性：切到后台时暂停摄像头+检测，回来时恢复
     document.addEventListener('visibilitychange', ()=>{
       if(document.hidden){ stopCamera(); }
       else if(STATE.mode==='camera' && !STATE.origCanvasEl){ startCamera(); }
+      else if(STATE.mode==='camera' && !autoDetect.active && !autoDetect.detected){ startAutoDetect(); }
     });
     // 预加载AI模型，拍照时无需等待
     if(typeof FaceAnalyzer!=='undefined'){ FaceAnalyzer.init().catch(()=>{}); }

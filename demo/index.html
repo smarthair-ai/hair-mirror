@@ -85,10 +85,11 @@
         <div id="camWrap" class="cam-wrap">
           <video id="cam" autoplay playsinline muted></video>
           <canvas id="origCanvas" class="orig" width="720" height="880"></canvas>
-          <div id="camHint" class="cam-hint">正对摄像头，光线充足</div>
+          <div id="autoDetectStatus" class="auto-status" hidden>● 正在检测人脸…</div>
+          <div id="camHint" class="cam-hint">正对摄像头，光线充足 · 自动检测中</div>
         </div>
         <div class="cap-actions">
-          <button id="btnCapture" class="primary big">📷 拍照</button>
+          <button id="btnCapture" class="primary big">📷 重新检测</button>
           <button id="btnRetryCam" class="ghost" hidden>🔄 重试摄像头</button>
           <button id="btnUpload" class="ghost">上传照片</button>
           <input type="file" id="fileInput" accept="image/*" capture="user" hidden />
