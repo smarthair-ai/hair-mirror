@@ -698,14 +698,16 @@
 
   function camErrorHint(e){
     const map={
-      NotAllowedError:'摄像头权限被拒绝。请在浏览器地址栏左侧点击🔒图标 → 允许使用摄像头，然后点「重试摄像头」。',
-      PermissionDeniedError:'摄像头权限被拒绝，请在浏览器设置中允许后点「重试摄像头」。',
-      NotFoundError:'未找到摄像头设备。可改用「上传照片」或「手动/收集表」模式。',
-      NotReadableError:'摄像头被其他程序占用（如微信/相机应用），请关闭后点「重试摄像头」。',
-      OverconstrainedError:'摄像头不支持请求的分辨率，已自动降级重试…',
-      SecurityError:'当前页面环境不允许调用摄像头（如非 HTTPS 或内嵌面板）。可直接「上传照片」使用。'
+      NotAllowedError:'请允许摄像头权限后继续试戴：点击地址栏左侧🔒 → 允许摄像头，再点「重新获取摄像头」。',
+      PermissionDeniedError:'请允许摄像头权限后继续试戴：在浏览器设置中开启摄像头权限，再点「重新获取摄像头」。',
+      NotFoundError:'未检测到摄像头设备。可改用「上传照片」或「手动/收集表」模式。',
+      NotReadableError:'摄像头被其他程序占用（如微信 / 系统相机），请关闭后点「重新获取摄像头」。',
+      OverconstrainedError:'摄像头不支持所请求的分辨率，已自动降级。',
+      SecurityError:'当前页面环境不允许调用摄像头（非 HTTPS 或内嵌面板）。请直接「上传照片」使用。',
+      TypeError:'摄像头参数异常，请点「重新获取摄像头」重试。'
     };
-    return map[e.name] || ('无法访问摄像头（'+e.name+'）。可用「上传照片」或「手动/收集表」模式。');
+    if(!e || !e.name) return '无法访问摄像头。可用「上传照片」或「手动/收集表」模式。';
+    return map[e.name] || ('无法访问摄像头（'+(e.name||'未知错误')+'）。可用「上传照片」或「手动/收集表」模式。');
   }
 
   async function startCamera(){
@@ -715,13 +717,18 @@
     // 恢复实时视频画面显示（清除上一次拍照的定格照片）
     restoreLiveVideo();
 
+    // 1) 环境支持检测：getUserMedia 仅在 HTTPS / localhost 等安全上下文可用
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      setStatus('当前环境不支持摄像头（如内嵌面板或非安全环境）。请直接「上传照片」，或在系统浏览器中打开本页。', true);
+      setStatus('当前浏览器不支持摄像头功能，或当前不是安全环境（需 HTTPS 或 localhost）。可改用「上传照片」试戴。', true);
+      $('camHint').textContent='当前浏览器不支持摄像头';
       $('btnRetryCam').hidden=false;
       return;
     }
 
-    // 多级降级：高清 → 标清 → 任意摄像头
+    setStatus('正在请求摄像头权限…请点击「允许」');
+    $('camHint').textContent='正在请求摄像头权限…';
+
+    // 2) 多级降级获取视频流：高清 → 标清 → 任意摄像头
     const tries=[
       { video:{ facingMode:'user', width:{ideal:1280}, height:{ideal:960} }, audio:false },
       { video:{ facingMode:'user' }, audio:false },
@@ -735,24 +742,29 @@
         break;
       }catch(e){
         lastErr=e;
-        // 权限被拒时继续尝试无意义，直接跳出
-        if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'||e.name==='SecurityError') break;
+        // 权限被拒 / 安全限制：继续尝试无意义，直接跳出
+        if(['NotAllowedError','PermissionDeniedError','SecurityError'].includes(e.name)) break;
       }
     }
     if(!stream){
       setStatus(camErrorHint(lastErr||{name:'UnknownError'}), true);
+      $('camHint').textContent='摄像头不可用，点「重新获取摄像头」重试';
       $('btnRetryCam').hidden=false;
       return;
     }
+
+    // 3) 把视频流挂到 <video> 并播放，再把画面显示到左侧摄像头区域
     try{
-      const v=$('cam'); v.srcObject=stream;
-      await v.play();
-      // 等待有效画面尺寸（最多3秒）
+      const v=$('cam');
+      v.srcObject=stream;
+      v.muted=true; v.playsInline=true; v.autoplay=true;   // 防御性设置，确保自动播放
+      try{ await v.play(); }catch(_){ /* 部分浏览器 play() 需在用户手势中触发，忽略 */ }
+      // 等待有效画面尺寸（最多 3 秒）
       await new Promise((res)=>{
         if(v.videoWidth>0) return res();
         let n=0; const t=setInterval(()=>{ if(v.videoWidth>0||++n>30){ clearInterval(t); res(); } },100);
       });
-      camReady = $('cam').videoWidth>0;
+      camReady = v.videoWidth>0;
       if(camReady){
         $('camHint').textContent='正对摄像头，光线充足 · 自动检测中';
         $('btnCapture').classList.add('detecting');
@@ -762,7 +774,8 @@
         // ★ 启动实时 AR 跟踪：发型跟随头部实时移动/旋转/缩放
         startRealtimeAR();
       }else{
-        setStatus('摄像头画面未就绪，请点「重试摄像头」。', true);
+        setStatus('摄像头画面未就绪，请点「重新获取摄像头」。', true);
+        $('camHint').textContent='摄像头画面未就绪';
         $('btnRetryCam').hidden=false;
       }
     }catch(e){
@@ -1006,7 +1019,7 @@
   async function doCapture(){
     const v=$('cam');
     if(!stream || !v.videoWidth){
-      setStatus('摄像头未就绪。点「重试摄像头」，或改用「上传照片」/「手动模式」。', true);
+      setStatus('摄像头未就绪。点「重新获取摄像头」，或改用「上传照片」/「手动模式」。', true);
       $('btnRetryCam').hidden=false;
       return;
     }
