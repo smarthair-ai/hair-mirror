@@ -1058,12 +1058,14 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
   const sL = { x: meta.eyeL[0], y: meta.eyeL[1] };
   const sR = { x: meta.eyeR[0], y: meta.eyeR[1] };
 
-  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿
+  // 缩放：顾客眼距 / 源眼距 × 覆盖率补偿。
+  //   ★ 每款发型可在 HAIR_META[id].arScale 单独微调（与 AR_TUNE.SCALE_BOOST、UI“大小”滑块叠加）
   const dDist = Math.hypot(dR.x - dL.x, dR.y - dL.y);
   const sDist = Math.max(1, Math.hypot(sR.x - sL.x, sR.y - sL.y));
   const coverage = meta.coverage || 0.25;
   const coverageScale = 1.06 + Math.max(0, (0.30 - coverage) * 0.5);
-  const scale = (dDist / sDist) * coverageScale;
+  const scaleBoost = AR_TUNE.SCALE_BOOST * (meta.arScale != null && isFinite(meta.arScale) ? meta.arScale : 1);
+  const scale = (dDist / sDist) * coverageScale * scaleBoost;
 
   // 旋转：双眼倾角差（跟随头部左右倾斜 roll）
   const angle = Math.atan2(dR.y - dL.y, dR.x - dL.x) - Math.atan2(sR.y - sL.y, sR.x - sL.x);
@@ -1133,12 +1135,13 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
     let targetTop, targetCx, refH, refW, full;
     if(a){
       refH = a.faceH; refW = a.faceW;
-      targetTop = a.headTop - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET; // ★ 发顶锁头顶 + 纵向微调
+      // ★ 发顶锁头顶 + 纵向微调（AR_TUNE.VERTICAL_OFFSET 全局，meta.arDy 每款发型单独覆盖）
+      targetTop = a.headTop - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET + (meta.arDy != null ? meta.arDy : 0);
       targetCx  = a.headCx;                 // 真实人头中线（鬓角中点为主）
       full = 1;                             // 完全对齐，严格跟随人头
     }else{
       refH = canvasH * 0.30; refW = canvasW * 0.40;
-      targetTop = canvasH * 0.16 - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET;
+      targetTop = canvasH * 0.16 - refH * AR_TUNE.BOX_PAD + AR_TUNE.VERTICAL_OFFSET + (meta.arDy != null ? meta.arDy : 0);
       targetCx  = canvasW / 2;
       full = 0.82;
     }
@@ -1158,8 +1161,11 @@ function buildRealtimeTransform(landmarks, meta, canvasW, canvasH, fit, videoW, 
     }
   }
 
-  // 手动微调（上下偏移 / 左右偏移 / 旋转）叠加在自动贴合之上
-  T.dx += uDx; T.dy += uDy; T.angle += uRot;
+  // 手动微调（上下偏移 / 左右偏移 / 旋转）叠加在自动贴合之上。
+  //   ★ meta.arDx 为每款发型单独的横向偏移覆盖（与 UI“左右”滑块、AR_TUNE 叠加）
+  T.dx += uDx + (meta.arDx != null ? meta.arDx : 0);
+  T.dy += uDy;
+  T.angle += uRot;
 
   T.valid = isFinite(dDist) && dDist > 10 && scale > 0.1 && scale < 8
             && isFinite(T.dx) && isFinite(T.dy) && isFinite(T.sx) && isFinite(T.sy);
