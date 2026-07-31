@@ -1067,9 +1067,16 @@ window.AR_TUNE = AR_TUNE;
 function extractFaceAnchors(landmarks, source, canvasW, canvasH, videoW, videoH){
   if(!landmarks || !landmarks.length) return null;
 
+  // 以【点数】为最终判据，不盲信传入的 source：
+  // 引擎切换存在时序窗口（source 已变、点集还没换，或反之），
+  // 一旦按错误语义解读坐标（归一化 0..1 当成像素），发型会瞬间飞到画面角落。
+  // 468/478 只可能来自 MediaPipe，68 只可能来自 face-api，据此纠正即可根除错配。
+  if(landmarks.length >= 468) source = 'mp';
+  else if(landmarks.length >= 68) source = 'api';
+  else return null;
+
   /* ---- ① MediaPipe FaceMesh（468 基础点 / 478 含虹膜）---- */
   if(source === 'mp'){
-    if(landmarks.length < 468) return null;
     const P = i => { const p = landmarks[i]; return { x: p.x * canvasW, y: p.y * canvasH, z: (p.z || 0) * canvasW }; };
     const MID = idx => {
       let x = 0, y = 0;

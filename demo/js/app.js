@@ -5,7 +5,7 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-07-31T22:55+08:00 · AR-v2';
+  const BUILD_VERSION = '2026-08-01T00:35+08:00 · AR-v2.1';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
 
@@ -855,6 +855,8 @@
       if(window.MPFace && typeof window.MPFace.init === 'function'){
         window.MPFace.init().then(ok => {
           if(ok){
+            // 注意：此处只代表"初始化成功"。真正能否推理由首帧 detect 决定，
+            // 若环境缺 WebGL 会在几帧后置 broken 并自动降级（见 _rtDetectFace）。
             console.log('[AR] 追踪引擎：MediaPipe FaceMesh 468 点 / ' + (window.MPFace.delegate || ''));
             tip('detecting', '● 高精度追踪已就绪 · 正在检测人脸…');
           }else{
@@ -956,9 +958,14 @@
     if(_rtDetecting) return;
     _rtDetecting = true;
     try{
-      /* ---------- ① 主路径：MediaPipe FaceMesh ---------- */
+      /* ---------- ① 主路径：MediaPipe FaceMesh ----------
+       * 判据用 available（= ready 且推理未判定损坏）而非 ready：
+       * 缺少 WebGL/硬件加速的机器上 MediaPipe 会"假就绪"——初始化成功但每帧推理抛错。
+       * 若只看 ready，就会永远卡在主路径、永不降级，表现为发型始终不出现。
+       * MP.detect 内部连续异常达阈值后会置 broken，此处随即自动切换到 face-api。
+       * ------------------------------------------------------------------ */
       const MP = window.MPFace;
-      if(MP && MP.ready){
+      if(MP && MP.available){
         const r = MP.detect(v, performance.now());
         if(r && r.landmarks && r.landmarks.length >= 468){
           _switchSource('mp');         // 引擎切换瞬间重置平滑，避免发型从旧位置滑入
@@ -971,18 +978,27 @@
           _rtDetecting = false;
           return;
         }
-        // MediaPipe 就绪但本帧无脸 → 交给状态机做保持/淡出
-        _rtOnFaceLost();
-        _rtDetecting = false;
-        return;
+        // 引擎仍健康、只是本帧确实没脸 → 交给状态机做保持/淡出
+        if(MP.available){
+          _rtOnFaceLost();
+          _rtDetecting = false;
+          return;
+        }
+        // 刚刚被判定损坏 → 不浪费本帧，立即向下走 face-api
+        console.warn('[AR] MediaPipe 推理不可用，本帧起降级 face-api 68 点');
+        updateAutoStatus('detecting', '● 正在检测人脸…（基础追踪模式）');
       }
 
-      /* ---------- ② 降级路径：face-api 68 点 ---------- */
+      /* ---------- ② 降级路径：face-api 68 点 ----------
+       * 先无条件切源再检测：68 点与 468 点的坐标语义不同（像素 vs 归一化），
+       * 若等到检测成功才切，中间这段时间 _rtSource 仍是 'mp' 而点集已是 68 点，
+       * extractFaceAnchors 会按归一化解读像素坐标，发型瞬间飞到画面角落。
+       * ------------------------------------------------------------------ */
+      _switchSource('api');
       if(typeof FaceAnalyzer === 'undefined'){ _rtDetecting = false; return; }
       try{ await FaceAnalyzer.init(); }catch(e){ _rtDetecting = false; return; }
       const res = await FaceAnalyzer.analyze(v);
       if(res && res.landmarks && res.landmarks.length >= 68){
-        _switchSource('api');
         _rtLandmarks = res.landmarks;
         _rtMatrix = null;
         _rtConf = (res.confidence != null && isFinite(res.confidence)) ? res.confidence : 0.9;
