@@ -36,7 +36,29 @@
     document.head.appendChild(s);
   }catch(e){}
 })();
-</script></head>
+</script><style>
+  .ar-dbg, .ar-dbg-toggle { position: fixed; z-index: 99990; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8eefc; }
+  .ar-dbg { right: 10px; bottom: 10px; width: 252px; background: rgba(12,16,26,.92); border: 1px solid #2b3650; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.5); overflow: hidden; user-select: none; }
+  .ar-dbg.hidden, .ar-dbg-toggle.hidden { display: none; }
+  .ar-dbg.dragging { opacity: .92; }
+  .ar-dbg-head { cursor: move; padding: 7px 10px; background: linear-gradient(90deg,#2a3a66,#1d2742); display: flex; align-items: center; gap: 6px; font-weight: 700; }
+  .ar-dbg-head #arDbgStyle { color:#9fb0ff; font-weight: 400; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ar-dbg-head button { background: rgba(255,255,255,.12); border: 0; color: #fff; border-radius: 6px; width: 20px; height: 20px; cursor: pointer; }
+  .ar-dbg-body { padding: 8px 10px 10px; }
+  .ar-dbg-readout { background: rgba(0,0,0,.35); border-radius: 7px; padding: 6px 8px; margin-bottom: 8px; }
+  .ar-dbg-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+  .ar-dbg-row span { color: #8fa0c8; } .ar-dbg-row b { color: #cfe0ff; font-weight: 600; }
+  .ar-dbg label { display: block; margin: 5px 0; color: #b9c6e6; }
+  .ar-dbg label span { float: right; color: #7cff00; }
+  .ar-dbg input[type=range] { width: 100%; margin-top: 2px; accent-color: #6c8cff; }
+  .ar-dbg-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .ar-dbg-btns button { flex: 1; background: #2a3a66; color: #dfe7ff; border: 0; border-radius: 7px; padding: 6px 0; cursor: pointer; font-size: 12px; }
+  .ar-dbg-btns button:hover { background: #35488a; }
+  .ar-dbg-hint { margin-top: 8px; color: #7e8db0; font-size: 11px; }
+  .ar-dbg pre { max-height: 120px; overflow: auto; background: rgba(0,0,0,.4); border-radius: 6px; padding: 6px; color:#9fd9ff; font-size: 10px; white-space: pre-wrap; word-break: break-all; }
+  .ar-dbg-toggle { right: 6px; bottom: 34px; width: 34px; height: 34px; border-radius: 50%; background: rgba(12,16,26,.9); border: 1px solid #2b3650; color: #9fb0ff; font-size: 16px; cursor: pointer; }
+</style>
+</head>
 <body>
 <!-- ===================== 顶栏 ===================== -->
 <header class="topbar">
@@ -335,5 +357,33 @@
      加载完成后挂载 window.MPFace，由 app.js 轮询接管为主追踪引擎；
      若 CDN 被墙/不可达则自动降级 face-api 68 点，页面功能不受影响。 -->
 <script type="module" src="js/mpface.js"></script>
+
+<!-- 需求八：AR 调试面板（右下角可拖拽，实时读数 + 素材锚点/缩放/偏移/旋转微调 + 保存配置）。
+     默认隐藏面板，右下角显示 🛠 按钮可打开；或访问 ?ardebug=1 自动打开。 -->
+<div id="arDbgPanel" class="ar-dbg hidden">
+  <div class="ar-dbg-head" id="arDbgHead">
+    <span>🛠 AR 调试</span><span id="arDbgStyle">—</span>
+    <button id="arDbgClose" title="关闭">×</button>
+  </div>
+  <div class="ar-dbg-body">
+    <div class="ar-dbg-readout" id="arDbgReadout"><span class="muted">等待贴合…</span></div>
+    <label>素材缩放 hairScale <span id="vHairScale">1.000</span>
+      <input type="range" id="dbgHairScale" min="0.85" max="1.20" step="0.005" value="1"></label>
+    <label>水平偏移 offsetX <span id="vOffX">0.000</span>
+      <input type="range" id="dbgOffX" min="-0.25" max="0.25" step="0.005" value="0"></label>
+    <label>垂直偏移 offsetY <span id="vOffY">0.000</span>
+      <input type="range" id="dbgOffY" min="-0.25" max="0.25" step="0.005" value="0"></label>
+    <label>旋转补偿 (°) <span id="vRot">0.0</span>
+      <input type="range" id="dbgRot" min="-15" max="15" step="0.5" value="0"></label>
+    <div class="ar-dbg-btns">
+      <button id="dbgSave">💾 保存配置</button>
+      <button id="dbgReset">↺ 重置</button>
+    </div>
+    <div class="ar-dbg-hint" id="arDbgHint">拖动滑块实时校准当前发型；点「保存配置」写入浏览器并复制可粘贴 JSON。<br>URL 加 <code>?ardebug=1</code> 自动打开。</div>
+    <pre id="arDbgJson" hidden></pre>
+  </div>
+</div>
+<button id="arDbgToggle" class="ar-dbg-toggle" title="AR 调试面板">🛠</button>
+<script src="js/debugpanel.js"></script>
 </body>
 </html>

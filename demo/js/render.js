@@ -1048,7 +1048,7 @@ const AR_TUNE = {
   YAW_MIN:        0.78,  // yaw 压缩下限（防转头被压扁）
   PITCH_MIN:      0.82,  // pitch 压缩下限
   YAW_SHIFT:      0.13,  // ★ 转头视差补偿：颅顶朝转向反侧的横移量（×头宽）
-  EYE_TO_HEAD:    2.10,  // 眼距→头宽 兜底系数（太阳穴点异常时启用）
+  EYE_TO_HEAD:    2.15,  // 眼距→头宽 兜底系数（= 需求三 headWidth = eyeDist × 2.15；太阳穴点异常时启用）
   MIN_CONF:       0.30,  // ★ 置信度阈值：低于此暂停贴图，避免无效漂移
   LOST_HOLD_MS:   600,   // ★ 人脸短暂丢失：保持上一帧位置的时长
   LOST_FADE_MS:   400,   // ★ 保持期后的淡出时长（淡出完毕彻底隐藏）
@@ -1057,6 +1057,34 @@ const AR_TUNE = {
 // 暴露到全局：app.js 读取丢脸时间窗口；浏览器控制台可直接改参数实时调试，
 // 例：AR_TUNE.SCALE_BOOST = 1.15 → 下一帧立即生效，无需刷新页面。
 window.AR_TUNE = AR_TUNE;
+
+/* =========================================================================
+ * 【二·发型模板锚点配置】—— 把每款素材的"对齐锚点 / 基准缩放 / 偏移 / 旋转补偿"
+ *        正式化为 HAIR_META[id] 上的独立字段（需求二）：
+ *          hairAnchorX / hairAnchorY  素材 PNG 上的对齐锚点，归一化 0~1（即 像素 / 素材宽高）
+ *                                    缺省由素材不透明包围盒顶边中点派生（等价于旧版 sCrown），
+ *                                    因此【不填也完全兼容旧行为】，填了即可逐款微调颅顶落点。
+ *          hairScale                 素材基准缩放（卷发/蓬松款 >1，贴头皮短发 <1），叠加在 scaleRate 之上
+ *          offsetX / offsetY         相对头部的额外偏移（×头宽 / ×头高，正=右/下），与旧字段同义
+ *          rotationOffset            素材相对头部的旋转补偿（弧度，正=顺时针），用于源图本身带倾斜的素材
+ *        ★ 运行时归一化：扫描 HAIR_META，凡缺省字段一律按上述"缺省值"补上，保证 buildRealtimeTransform
+ *          直接消费字段即可，无需到处写回退逻辑。调试面板(需求八)会把微调结果写回这些字段并持久化。
+ * ========================================================================= */
+function normalizeHairMeta(){
+  if(typeof HAIR_META !== 'object' || !HAIR_META) return;
+  for(const k in HAIR_META){
+    const m = HAIR_META[k];
+    if(!m || typeof m !== 'object') continue;
+    const w = m.w || 1, h = m.h || 1;
+    const bx = (m.box && m.box.length === 4) ? m.box : [0, 0, w, h];
+    // ★【锚点配置】素材颅顶（发型基准原点）落在 PNG 上的归一化坐标，缺省=包围盒顶边中点
+    if(m.hairAnchorX == null)   m.hairAnchorX = ((bx[0] + bx[2]) / 2) / w;
+    if(m.hairAnchorY == null)   m.hairAnchorY = bx[1] / h;
+    if(m.hairScale == null)     m.hairScale = 1;        // ★ 缩放系数：素材基准倍率
+    if(m.rotationOffset == null) m.rotationOffset = 0;  // ★ 旋转补偿（弧度）
+  }
+}
+normalizeHairMeta();
 
 /* =========================================================================
  * 统一锚点提取 —— 把两种检测源归一成同一套解剖锚点（画布像素坐标，未镜像）
@@ -1193,7 +1221,11 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
   const sEyeDist = Math.max(1, Math.hypot(sEyeR.x - sEyeL.x, sEyeR.y - sEyeL.y));
   const sRoll    = Math.atan2(sEyeR.y - sEyeL.y, sEyeR.x - sEyeL.x);
   const sBox     = (meta.box && meta.box.length === 4) ? meta.box : [0, 0, meta.w, meta.h];
-  const sCrown   = { x: (sBox[0] + sBox[2]) / 2, y: sBox[1] };   // 素材颅顶＝发型包围盒顶边中点
+  // ★【锚点配置·素材侧】发型基准原点＝素材 PNG 上的对齐锚点(hairAnchorX/Y 归一化 0~1)，
+  //   缺省由包围盒顶边中点派生；填了 hairAnchorX/Y 即可逐款把颅顶钉在素材任意位置（需求二）。
+  const hairAnchorX = (meta.hairAnchorX != null && isFinite(meta.hairAnchorX)) ? meta.hairAnchorX : ((sBox[0] + sBox[2]) / 2) / meta.w;
+  const hairAnchorY = (meta.hairAnchorY != null && isFinite(meta.hairAnchorY)) ? meta.hairAnchorY : sBox[1] / meta.h;
+  const sCrown   = { x: hairAnchorX * meta.w, y: hairAnchorY * meta.h };   // 素材颅顶（锚点还原为像素）
 
   /* ---------- ④ 自适应缩放：远近实时跟随 ----------
    * 双信号互补融合，两者盲区正好错开：
@@ -1221,23 +1253,26 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
     const blend = _clamp(wB / (wA + wB), 0.15, 0.85);               // sigB 的权重（正面时 0.5）
     sizeSig = blend * sigB + (1 - blend) * sigA;
   }
-  const scaleRate   = (meta.scaleRate != null && isFinite(meta.scaleRate)) ? meta.scaleRate : 1;  // ★ 单款倍率
+  const scaleRate   = (meta.scaleRate != null && isFinite(meta.scaleRate)) ? meta.scaleRate : 1;  // ★ 单款倍率（HAIR_META）
   const legacyScale = (meta.arScale   != null && isFinite(meta.arScale))   ? meta.arScale   : 1;  // 兼容旧参数
-  let scale = _clamp(sizeSig * scaleRate * legacyScale * AR_TUNE.SCALE_BOOST,
+  const hairScale   = (meta.hairScale != null && isFinite(meta.hairScale)) ? meta.hairScale : 1;  // ★ 缩放系数：素材基准倍率（需求二）
+  // ★【缩放系数】自适应尺寸 × 单款倍率 × 素材基准倍率 × 全局缩放 → 远近实时跟随人头大小
+  let scale = _clamp(sizeSig * scaleRate * legacyScale * hairScale * AR_TUNE.SCALE_BOOST,
                      AR_TUNE.SCALE_MIN, AR_TUNE.SCALE_MAX);
 
   /* ---------- ⑤ UI 手动微调（优先级最高） ---------- */
   const uScale = (fit.scale != null && isFinite(fit.scale)) ? _clamp(fit.scale, 0.5, 1.8) : 1;
   const uDx = fit.dx || 0, uDy = fit.dy || 0, uRot = fit.rot || 0;
   const finalScale = scale * uScale;
-  const angle = (roll - sRoll) + uRot;
+  const rotationOffset = (meta.rotationOffset != null && isFinite(meta.rotationOffset)) ? meta.rotationOffset : 0; // ★ 旋转补偿（弧度，需求二）
+  const angle = (roll - sRoll) + uRot + rotationOffset;
 
   /* ---------- ⑥ 颅顶落点：发型基准原点在"额上颅顶"，不是脸中心 ---------- */
   // 素材自身的「眼中心 → 颅顶」向量，经旋转+缩放搬到顾客头上 → 头部比例自动匹配
   const ca = Math.cos(angle), sa = Math.sin(angle);
   const vx = (sCrown.x - sEyeMid.x) * finalScale, vy = (sCrown.y - sEyeMid.y) * finalScale;
   const crownProp = { x: eyeMid.x + (vx * ca - vy * sa), y: eyeMid.y + (vx * sa + vy * ca) };
-  // 素材适配偏移：offsetY(×头高，正=下移) / offsetX(×头宽，正=右移)
+  // ★【偏移参数】offsetY(×头高，正=下移) / offsetX(×头宽，正=右移)——素材相对头部的额外对齐微调（需求二）
   const offsetY = (meta.offsetY != null && isFinite(meta.offsetY)) ? meta.offsetY : 0;
   const offsetX = (meta.offsetX != null && isFinite(meta.offsetX)) ? meta.offsetX : 0;
   // 转头视差补偿：颅顶位于头部中轴线【偏后】，双眼位于【偏前】，二者深度不同。
@@ -1257,6 +1292,7 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
     dx: crown.x + uDx + (meta.arDx != null ? meta.arDx : 0),        // 落点＝实检颅顶
     dy: crown.y + uDy + (meta.arDy != null ? meta.arDy : 0),
     angle: angle,
+    // ★【旋转补偿】yawComp / pitchComp：转头/俯仰时发型横向/纵向压缩，跟随头部透视（需求五）
     sx: finalScale * AR_TUNE.HAIR_W_COEFF * yawComp,
     sy: finalScale * pitchComp,
     pose: { yaw: yawN, pitch: pitchN, roll: roll, matrix: poseMat },
@@ -1332,6 +1368,8 @@ function renderRealtimeAR(canvas, opts){
       const op = (opts.fit && opts.fit.opacity != null && isFinite(opts.fit.opacity)) ? _clamp(opts.fit.opacity, 0.2, 1) : 1;
       ctx.save();
       ctx.globalAlpha = op * alpha;
+      // ★【坐标变换】绘制序列：translate(落点) → rotate(角) → scale(缩放) → translate(-锚点)
+      //   即把素材颅顶(ox,oy) 精确钉在实检颅顶(dx,dy) 上 —— 这就是"绑定人头"（需求四·镜像坐标系）。
       ctx.translate(T.dx, T.dy);
       ctx.rotate(T.angle);
       ctx.scale(T.sx, T.sy);

@@ -5,9 +5,31 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-08-01T00:35+08:00 · AR-v2.1';
+  const BUILD_VERSION = '2026-08-01T16:30+08:00 · AR-v2.2';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
+
+  /* 启动时应用 localStorage 中保存的发型素材覆盖项（需求二·调试面板"保存配置"）。
+   * 这些覆盖项在 render.js 的 normalizeHairMeta 之后写入，因此会覆盖默认派生值，并在整次会话中持续生效。 */
+  function applyHairMetaOverrides(){
+    try{
+      const raw = localStorage.getItem('smarthair_hairmeta_overrides');
+      if(!raw || typeof HAIR_META !== 'object') return;
+      const map = JSON.parse(raw);
+      let n = 0;
+      for(const id in map){
+        const m = HAIR_META[id];
+        if(!m) continue;
+        const o = map[id] || {};
+        ['hairAnchorX','hairAnchorY','hairScale','offsetX','offsetY','rotationOffset'].forEach(k=>{
+          if(o[k] != null && isFinite(o[k])) m[k] = o[k];
+        });
+        n++;
+      }
+      if(n) console.log('[AR] 已应用本地发型素材覆盖项：', n, '款');
+    }catch(e){ /* 覆盖项损坏不影响主流程 */ }
+  }
+  applyHairMetaOverrides();
 
   const $ = id => document.getElementById(id);
   const STATE = {
@@ -820,9 +842,10 @@
   function suggestFaceHint(){
     const v=$('cam');
     const mob = (window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+    // 需求七：人脸丢失超过短暂窗口 → 提示用户把脸对准镜头
     $('camHint').textContent = mob
-      ? '未检到人脸 · 请正对摄像头、调亮光线、避免侧脸；或点「上传照片」'
-      : '未检到人脸 · 请正对摄像头、调亮环境光、避免侧脸与逆光；或点「上传照片」';
+      ? '请将脸部对准镜头 · 未检到人脸，正对摄像头、调亮光线、避免侧脸；或点「上传照片」'
+      : '请将脸部对准镜头 · 未检到人脸，正对摄像头、调亮环境光、避免侧脸与逆光；或点「上传照片」';
   }
 
   function startRealtimeAR(){
@@ -917,10 +940,11 @@
     const canHair = STATE.tryOn && meta && metaUsable(meta) && rec && rec.loaded && !rec.failed;
     const alpha = _hairAlphaByTracking(now);
     const drawLM = _rtLandmarks ? smoothLandmarks(_rtLandmarks) : null;
+    let arT = null;
     try{
       if(canHair && drawLM && alpha > 0.01){
         // 摄像头画面（底层）+ 发型 PNG（顶层），同一镜像上下文，坐标系严格对齐
-        renderRealtimeAR(rc, {
+        arT = renderRealtimeAR(rc, {
           video: v,
           landmarks: drawLM,
           matrix: _rtMatrix,
@@ -946,6 +970,8 @@
         }
       }
     }catch(e){ /* 渲染异常不影响主流程 */ }
+    // 调试面板(需求八)：把本帧变换推送给面板，实时显示头部/发型尺寸与偏移读数
+    if(arT && typeof ArDebugPanel !== 'undefined' && ArDebugPanel.visible) ArDebugPanel.push(arT, meta, styleId);
     // 检测：按间隔异步调用，不阻塞渲染帧
     if(now - _rtLastDetect >= _RT_DETECT_INTERVAL){
       _rtLastDetect = now;
@@ -1026,10 +1052,10 @@
   // 人脸丢失：只累计计数与提示，位置由 _hairAlphaByTracking 的时间窗口统一管理
   function _rtOnFaceLost(){
     _rtNoFace++;
-    if(_rtNoFace >= 3 && _rtNoFace < 12){
+    if(_rtNoFace >= 3 && _rtNoFace < 6){
       updateAutoStatus('cooldown', '● 追踪中 · 人脸短暂离开，发型保留');
-    }else if(_rtNoFace >= 12){
-      suggestFaceHint();
+    }else if(_rtNoFace >= 6){
+      suggestFaceHint();   // 需求七：连续丢脸 ≥6 帧(≈0.36~0.66s)即提示"请将脸部对准镜头"
     }
   }
 
