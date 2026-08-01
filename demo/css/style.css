@@ -554,11 +554,14 @@ input[type=range]{width:100%; height:40px; accent-color:var(--brand);}
   border-radius:10px; font-size:13px; background:var(--surface2); color:var(--ink);}
 .filter-card .primary.sm{width:100%; margin-top:2px;}
 
-/* 右侧：为你推荐 3 款发型预览卡片 */
-.style-browser{min-width:0; display:flex; flex-direction:column; gap:12px;
-  position:sticky; top:72px; max-height:calc(100vh - 90px);
+/* 右侧：为你推荐 3 款发型预览卡片（顶部为脸型分析 Block1，内容较多故内部滚动） */
+.style-browser{min-width:0; display:flex; flex-direction:column; gap:14px;
+  position:sticky; top:72px; max-height:calc(100vh - 90px); overflow-y:auto;
   background:var(--card); border:1px solid var(--line2); border-radius:20px; padding:16px;
   backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); box-shadow:var(--shadow-float);}
+.style-browser::-webkit-scrollbar{width:8px;}
+.style-browser::-webkit-scrollbar-thumb{background:rgba(108,140,255,.35); border-radius:8px;}
+.style-browser::-webkit-scrollbar-track{background:transparent;}
 .browser-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
 .browser-head h2{margin:0; font-size:16px; color:#fff;}
 
@@ -579,6 +582,34 @@ input[type=range]{width:100%; height:40px; accent-color:var(--brand);}
 .rec-card.active::after{content:'✓'; position:absolute; top:6px; right:6px; width:20px; height:20px; border-radius:50%;
   background:var(--brand); color:#fff; display:grid; place-items:center; font-size:12px; font-weight:700; z-index:2;}
 .browser-hint{margin:0; font-size:11px; color:var(--sub2); line-height:1.5;}
+
+/* ===================== 脸型实时数据分析（右侧面板 Block1） ===================== */
+.face-analysis-card{margin:0;}
+.face-analysis{display:flex; flex-direction:column; gap:8px;}
+.face-analysis .fa-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.face-analysis .fa-shape{font-size:21px; font-weight:800; line-height:1.1;
+  background:var(--gradient-brand); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.face-analysis .fa-meta-tags{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+.face-analysis .gender-switch-row{display:flex; gap:6px; margin:1px 0 2px;}
+.face-analysis .gender-switch-row .gender-switch{padding:3px 11px; font-size:11px;}
+.face-analysis .fa-metrics{display:flex; flex-direction:column; gap:9px; margin-top:2px;}
+.face-analysis .fa-metric{display:grid; grid-template-columns:minmax(0,1fr) 84px auto; align-items:center; gap:8px;}
+.face-analysis .fa-mlabel{font-size:12px; color:var(--sub);}
+.face-analysis .fa-bar{height:8px; border-radius:6px; background:rgba(255,255,255,.08); overflow:hidden;}
+.face-analysis .fa-fill{display:block; height:100%; width:0; border-radius:6px;
+  background:linear-gradient(90deg,var(--brand),var(--accent)); transition:width .35s ease;}
+.face-analysis .fa-val{font-size:12px; font-weight:700; color:var(--ink); text-align:right; white-space:nowrap;}
+.face-analysis .fa-val .fa-q{font-style:normal; font-size:10px; color:var(--sub2); margin-left:3px;}
+.face-analysis .fa-advice{margin:4px 0 0; font-size:12px; line-height:1.5; color:var(--sub);
+  background:rgba(108,140,255,.08); border-left:3px solid var(--brand); padding:7px 10px; border-radius:0 8px 8px 0;}
+
+/* 推荐卡片缩小、横向并排（Block2） */
+.style-browser #recCards.rec-cards{gap:8px;}
+.style-browser .rec-card{box-shadow:var(--shadow-card);}
+.style-browser .rec-card .rc-thumb{aspect-ratio:1/1;}
+.style-browser .rec-card .rc-body{padding:6px 7px 8px;}
+.style-browser .rec-card .rc-name{font-size:11px; height:26px;}
+.style-browser .rec-card .rc-meta{font-size:9px;}
 
 /* 控制台：其余功能卡片 */
 .studio-console{margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));

@@ -17,21 +17,54 @@
 const HAIR_META = {"2": {"w": 606, "h": 800, "eyeL": [243.7, 329.8], "eyeR": [375.3, 336.4], "face": [168, 224, 312, 312], "box": [50, 6, 562, 799], "coverage": 0.3611, "scaleRate": 1.015, "offsetY": 0.004, "offsetX": 0}, "3": {"w": 606, "h": 800, "eyeL": [221.9, 333.6], "eyeR": [367.8, 347.9], "face": [117, 229, 355, 355], "box": [64, 9, 536, 603], "coverage": 0.2968, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "4": {"w": 606, "h": 800, "eyeL": [255.5, 319.9], "eyeR": [396.8, 318.3], "face": [152, 228, 334, 334], "box": [80, 7, 563, 753], "coverage": 0.3582, "scaleRate": 1.045, "offsetY": 0.019, "offsetX": 0}, "5": {"w": 669, "h": 800, "eyeL": [267.3, 255.9], "eyeR": [357.4, 256.3], "face": [202, 191, 218, 218], "box": [18, 56, 599, 799], "coverage": 0.3497, "scaleRate": 1.03, "offsetY": 0.008, "offsetX": 0}, "7": {"w": 606, "h": 800, "eyeL": [220.5, 329.9], "eyeR": [336.3, 327.4], "face": [159, 247, 278, 278], "box": [53, 60, 547, 670], "coverage": 0.2472, "scaleRate": 1.0, "offsetY": 0.003, "offsetX": 0}, "8": {"w": 606, "h": 800, "eyeL": [255.0, 262.2], "eyeR": [357.3, 264.2], "face": [182, 183, 256, 256], "box": [14, 14, 605, 799], "coverage": 0.4176, "scaleRate": 1.045, "offsetY": 0.019, "offsetX": 0}, "9": {"w": 606, "h": 800, "eyeL": [255.9, 240.2], "eyeR": [329.3, 254.8], "face": [184, 191, 185, 185], "box": [23, 58, 466, 790], "coverage": 0.3208, "scaleRate": 1.03, "offsetY": 0.015, "offsetX": 0}, "10": {"w": 606, "h": 800, "eyeL": [243.2, 315.9], "eyeR": [364.1, 312.6], "face": [160, 224, 291, 291], "box": [87, 42, 513, 607], "coverage": 0.192, "scaleRate": 1.03, "offsetY": 0.015, "offsetX": 0}, "11": {"w": 606, "h": 800, "eyeL": [253.6, 382.2], "eyeR": [362.6, 387.8], "face": [176, 307, 268, 268], "box": [145, 149, 458, 403], "coverage": 0.0799, "scaleRate": 0.985, "offsetY": -0.001, "offsetX": 0}, "12": {"w": 606, "h": 800, "eyeL": [244.1, 360.9], "eyeR": [368.3, 367.0], "face": [150, 276, 311, 311], "box": [110, 89, 497, 414], "coverage": 0.1342, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "13": {"w": 606, "h": 800, "eyeL": [244.3, 397.4], "eyeR": [379.3, 406.1], "face": [140, 308, 333, 333], "box": [139, 136, 465, 411], "coverage": 0.0762, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "14": {"w": 606, "h": 800, "eyeL": [204.5, 366.6], "eyeR": [315.3, 362.7], "face": [129, 293, 265, 265], "box": [115, 138, 398, 374], "coverage": 0.0624, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "15": {"w": 606, "h": 800, "eyeL": [248.4, 361.7], "eyeR": [372.6, 365.6], "face": [155, 279, 306, 306], "box": [151, 120, 456, 378], "coverage": 0.0619, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "16": {"w": 606, "h": 800, "eyeL": [246.6, 435.4], "eyeR": [366.5, 431.2], "face": [156, 345, 297, 297], "box": [125, 165, 477, 485], "coverage": 0.1043, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "17": {"w": 606, "h": 800, "eyeL": [248.1, 347.4], "eyeR": [361.8, 350.6], "face": [168, 269, 278, 278], "box": [104, 67, 495, 400], "coverage": 0.1379, "scaleRate": 1.0, "offsetY": 0.003, "offsetX": 0}, "18": {"w": 606, "h": 800, "eyeL": [249.3, 362.6], "eyeR": [361.0, 360.3], "face": [169, 286, 267, 267], "box": [116, 126, 482, 591], "coverage": 0.1255, "scaleRate": 1.015, "offsetY": 0.004, "offsetX": 0}, "19": {"w": 606, "h": 800, "eyeL": [244.5, 424.7], "eyeR": [355.2, 423.0], "face": [163, 341, 278, 278], "box": [139, 177, 450, 439], "coverage": 0.0734, "scaleRate": 0.985, "offsetY": -0.001, "offsetX": 0}, "20": {"w": 606, "h": 800, "eyeL": [246.7, 358.5], "eyeR": [363.2, 360.9], "face": [160, 278, 292, 292], "box": [129, 75, 475, 369], "coverage": 0.0926, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "24": {"w": 642, "h": 800, "eyeL": [327.9, 357.6], "eyeR": [441.4, 347.3], "face": [224, 257, 277, 277], "box": [0, 50, 540, 612], "coverage": 0.2148, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "29": {"w": 760, "h": 800, "eyeL": [339.1, 325.0], "eyeR": [475.2, 327.5], "face": [248, 231, 319, 319], "box": [133, 0, 676, 755], "coverage": 0.2153, "scaleRate": 1.015, "offsetY": 0.004, "offsetX": 0}, "31": {"w": 811, "h": 800, "eyeL": [344.3, 346.6], "eyeR": [468.7, 347.9], "face": [264, 260, 292, 292], "box": [165, 83, 647, 690], "coverage": 0.2111, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}, "32": {"w": 600, "h": 800, "eyeL": [241.9, 270.5], "eyeR": [341.9, 275.2], "face": [168, 195, 251, 251], "box": [6, 34, 593, 799], "coverage": 0.4248, "scaleRate": 1.045, "offsetY": 0.019, "offsetX": 0}, "33": {"w": 599, "h": 800, "eyeL": [242.0, 272.0], "eyeR": [343.3, 273.3], "face": [170, 195, 249, 249], "box": [40, 37, 535, 799], "coverage": 0.3622, "scaleRate": 1.03, "offsetY": 0.015, "offsetX": 0}, "34": {"w": 608, "h": 800, "eyeL": [207.2, 415.7], "eyeR": [386.7, 415.7], "face": [47.7, 226.3, 498.6, 498.6], "box": [0, 0, 608, 606], "coverage": 0.4063, "scaleRate": 0.97, "offsetY": -0.005, "offsetX": 0}};
 
 /* =========================================================================
- * hairPresets — 发型模板锚点【配置示例】（需求二）
+ * hairPresets — 发型分组预设库（规格二）
  * -------------------------------------------------------------------------
- * 按"卷发 / 长发 / 短发"三类给出默认锚点参数，作为每款素材微调的起点。
- * 字段与 HAIR_META[id] 完全一致（见 render.js normalizeHairMeta 注释）：
- *   hairAnchorX / hairAnchorY  素材 PNG 对齐锚点（归一化 0~1，左上角原点）
- *   hairScale                 素材基准缩放（>1 蓬松/卷发，<1 贴头皮短发）
- *   offsetX / offsetY         相对头部偏移（×头宽 / ×头高，正=右/下）
- *   rotationOffset            素材相对头部旋转补偿（弧度）
- * 实际使用：HAIR_META[id] 已逐款填过 scaleRate/offsetX/offsetY；本示例用于
- *   (a) 新素材未单独校准时按品类套用；(b) 调试面板"重置"回退到的参考值。
- *   调试面板(需求八)实时微调后，会把结果写回 HAIR_META[id] 并持久化到 localStorage。
+ * 【配置优先级】单款显式配置  >  分组预设  >  系统缺省
+ *   分组由 render.js resolveHairGroup() 依据 HAIRSTYLES 的 length / curl 自动判定：
+ *     wave     大波浪/卷发（curl=wave|curly 且非短发）
+ *     long     长发（length=long）
+ *     short    短发（length=short）
+ *     clavicle 锁骨发/中长（其余）
+ *
+ * 【字段定义】与 HAIR_META[id] 完全一致，每款独立、互不干扰：
+ *   id        发型编号（对应 HAIRSTYLES.id）
+ *   anchorX   素材 PNG 对齐锚点 X（归一化 0~1，左上角为原点）
+ *   anchorY   素材 PNG 对齐锚点 Y（归一化 0~1）
+ *   scaleBase 素材基准缩放（>1 蓬松/卷发，<1 贴头皮短发）
+ *   offsetX   横向偏移（×头宽，正=向右）
+ *   offsetY   纵向偏移（×头高，正=向下）
+ *   rotFix    旋转补偿（弧度，正=顺时针）
+ *   ※ 旧字段名 hairAnchorX / hairAnchorY / hairScale / rotationOffset 仍可用，运行时双向同步。
+ *
+ * 【工作流】开启 ?ardebug=1 → 右下角 🛠 打开调试面板 → 拖动滑块实时对齐 →
+ *   点【复制配置】拿到可直接粘贴的代码 → 填入下方 hairStyleOverrides 即成为永久预设。
+ *
+ * 【注意】下表 offsetYAdd 是【增量】，会叠加在单款 offsetY 之上（单款值刻画素材自身构图，
+ *   组增量刻画品类共性，二者正交）；scaleBase 与单款 scaleRate 相乘。
+ *   实际生效表在 render.js 的 HAIR_GROUP_PRESET，此处为对照文档。
  * ========================================================================= */
 const hairPresets = {
-  curly: { hairAnchorX: 0.50, hairAnchorY: 0.020, hairScale: 1.045, offsetX: 0,     offsetY: 0.012,  rotationOffset: 0 }, // 卷发：蓬松放大、重心略下
-  long:  { hairAnchorX: 0.50, hairAnchorY: 0.010, hairScale: 1.030, offsetX: 0,     offsetY: 0.016,  rotationOffset: 0 }, // 长发：基准略放大、重心靠下
-  short: { hairAnchorX: 0.50, hairAnchorY: 0.008, hairScale: 0.980, offsetX: 0,     offsetY: -0.004, rotationOffset: 0 }  // 短发：贴头皮、颅顶略上提
+  // 大波浪/卷发：蓬松外扩略放大；★纵向额外下延最多，让卷发尾部自然垂落不"吊起来"
+  wave:     { scaleBase: 1.07, offsetYAdd:  0.030, anchorYAdj: -0.012 },
+  // 长发：整体略大，重心靠下
+  long:     { scaleBase: 1.03, offsetYAdd:  0.012, anchorYAdj: -0.008 },
+  // 短发：贴头皮，缩放收敛，颅顶略上提
+  short:    { scaleBase: 0.99, offsetYAdd: -0.004, anchorYAdj:  0.005 },
+  // 锁骨发/中长：介于长短之间
+  clavicle: { scaleBase: 1.01, offsetYAdd:  0.006, anchorYAdj: -0.003 }
 };
 window.hairPresets = hairPresets;
+
+/* =========================================================================
+ * hairStyleOverrides — 单款永久预设库（调试面板【复制配置】的粘贴目标）
+ * -------------------------------------------------------------------------
+ * 在此填入的配置优先级最高，会覆盖分组预设。例：
+ *   hairStyleOverrides[4] = { anchorX: 0.502, anchorY: 0.014, scaleBase: 1.15,
+ *                             offsetX: -0.006, offsetY: 0.062, rotFix: 0 };
+ * 留空则全部走分组预设，不影响现有效果。
+ * ========================================================================= */
+const hairStyleOverrides = {
+  // ← 调试完成后把【复制配置】得到的整行粘贴到这里
+};
+// 由 render.js 的 normalizeHairMeta() 在归一化末尾统一应用（优先级最高，直接覆盖分组预设）
+window.hairStyleOverrides = hairStyleOverrides;

@@ -5,12 +5,14 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-08-01T16:30+08:00 · AR-v2.2';
+  const BUILD_VERSION = '2026-07-31T18:20+08:00 · AR-v2.3 · 左右分栏布局';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
 
-  /* 启动时应用 localStorage 中保存的发型素材覆盖项（需求二·调试面板"保存配置"）。
-   * 这些覆盖项在 render.js 的 normalizeHairMeta 之后写入，因此会覆盖默认派生值，并在整次会话中持续生效。 */
+  /* 启动时应用 localStorage 中保存的发型素材覆盖项（规格一·调试面板「保存」）。
+   * 在 render.js 的 normalizeHairMeta 之后写入，因此会覆盖组预设/默认派生值，整次会话持续生效。
+   * 新旧字段名双向兼容：新 anchorX/anchorY/scaleBase/rotFix ↔ 旧 hairAnchorX/hairAnchorY/hairScale/rotationOffset。 */
+  const _OVR_ALIAS = { anchorX:'hairAnchorX', anchorY:'hairAnchorY', scaleBase:'hairScale', rotFix:'rotationOffset' };
   function applyHairMetaOverrides(){
     try{
       const raw = localStorage.getItem('smarthair_hairmeta_overrides');
@@ -21,9 +23,14 @@
         const m = HAIR_META[id];
         if(!m) continue;
         const o = map[id] || {};
-        ['hairAnchorX','hairAnchorY','hairScale','offsetX','offsetY','rotationOffset'].forEach(k=>{
-          if(o[k] != null && isFinite(o[k])) m[k] = o[k];
-        });
+        // ① 新字段名（含旧名回落）→ 同时写入新旧两侧
+        for(const nk in _OVR_ALIAS){
+          const ok = _OVR_ALIAS[nk];
+          const v = (o[nk] != null && isFinite(o[nk])) ? +o[nk] : ((o[ok] != null && isFinite(o[ok])) ? +o[ok] : null);
+          if(v != null){ m[nk] = v; m[ok] = v; }
+        }
+        // ② 无别名的字段
+        ['offsetX','offsetY'].forEach(k=>{ if(o[k] != null && isFinite(o[k])) m[k] = +o[k]; });
         n++;
       }
       if(n) console.log('[AR] 已应用本地发型素材覆盖项：', n, '款');
@@ -279,32 +286,67 @@
     setStatus('已手动切换性别为：'+({female:'女',male:'男',all:'不限'}[g]||'')+'。发型推荐已按新性别重新匹配。');
   }
 
-  /* ---------- 分析指标展示 ---------- */
+  /* ---------- 分析指标展示（右侧面板 Block1：脸型实时数据分析，6 项指标 + 进度条） ---------- */
   function displayMetrics(){
-    const m=STATE.metrics; const box=$('metricsBox');
+    const m = STATE.metrics; const box = $('metricsBox');
+    if(!m){ box.innerHTML = '<span class="m-tag">尚未分析</span>'; return; }
     const toneTxt = {warm:'暖调',cool:'冷调',neutral:'中性'}[m.skinTone]||'—';
-    const genderTxt = {female:'女',male:'男',all:'不限'}[m.gender]||'—';
-    let html = `<span class="m-tag">脸型：${m.faceShape}</span>
-      <span class="m-tag">肤色：${toneTxt}</span>
-      <div class="gender-row">
-        <span id="genderLabel" class="m-tag gender-tag${m.gender==='male'?' male':m.gender==='female'?' female':''}">${{female:'♀ 女',male:'♂ 男',all:'不限'}[m.gender]||'—'}${m.genderConfidence?' · '+Math.round(m.genderConfidence*100)+'%':''} · ${m.genderMethod==='landmark'||m.hasDetection?'AI识别':'手动选择'}</span>
+    const gTagCls = m.gender==='male'?' male':m.gender==='female'?' female':'';
+    const gMethod = (m.genderMethod==='landmark'||m.hasDetection)?'AI识别':'手动选择';
+    const gConf = m.genderConfidence ? (' · '+Math.round(m.genderConfidence*100)+'%') : '';
+
+    let html = `<div class="fa-head">
+        <span class="fa-shape">${m.faceShape||'—'}</span>
+        <span class="fa-meta-tags">
+          <span class="m-tag">肤色 ${toneTxt}</span>
+          <span class="m-tag gender-tag${gTagCls}">${{female:'♀ 女',male:'♂ 男',all:'不限'}[m.gender]||'—'}${gConf} · ${gMethod}</span>
+        </span>
+      </div>
+      <div class="gender-switch-row">
         <button class="ghost sm gender-switch" onclick="switchGender('female')">♀ 女</button>
         <button class="ghost sm gender-switch" onclick="switchGender('male')">♂ 男</button>
         <button class="ghost sm gender-switch" onclick="switchGender('all')">不限</button>
       </div>`;
+
     if(m.hasDetection && m.metrics){
       const mt = m.metrics;
-      html += `<div class="m-grid">
-        <div class="m-item">长宽比 <b>${mt.LWR}</b></div>
-        <div class="m-item">颧骨宽 <b>${mt.cheekWidth}</b></div>
-        <div class="m-item">额头宽 <b>${mt.foreheadWidth}</b></div>
-        <div class="m-item">下颌宽 <b>${mt.jawWidth}</b></div>
+      const fl = Math.max(1, mt.faceLength || mt.faceWidth || 1);
+      const pct = (v,lo,hi)=>Math.round(Math.min(1,Math.max(0,(v-lo)/(hi-lo)))*100);
+      html += `<div class="fa-metrics">
+        ${faRow('脸长 / 脸宽比值', pct(mt.LWR,1.1,1.7), mt.LWR)}
+        ${faRow('额宽', pct(mt.foreheadWidth/fl,0.5,0.85), mt.foreheadWidth+' px')}
+        ${faRow('颧宽', pct(mt.cheekWidth/fl,0.55,0.95), mt.cheekWidth+' px')}
+        ${faRow('下颌宽 / 颧宽比值', pct(mt.jawCheekRatio,0.65,0.98), mt.jawCheekRatio)}
+        ${faRow('下巴尖锐角度', pct(mt.chinAngle,40,95), mt.chinAngle+'° <i class="fa-q">'+chinQual(mt.chinAngle)+'</i>')}
       </div>`;
+      html += `<p class="fa-advice">${faceShapeAdvice(m.faceShape)}</p>`;
     } else {
-      html += `<p class="hint">（手动/收集表模式）结合脸型与肤色为你匹配发型、发长与发色。</p>`;
+      html += `<p class="hint">（手动 / 收集表模式）结合脸型与肤色为你匹配发型、发长与发色；点「重新检测」可启用实时 AI 分析。</p>`;
     }
     html += `<span class="m-tag" style="background:#f0f4ff;">发质：${quizText()}</span>`;
-    box.innerHTML=html;
+    box.innerHTML = html;
+  }
+  // 单条指标：标签 + 进度条 + 数值
+  function faRow(label, pct, val){
+    return `<div class="fa-metric">
+        <div class="fa-mlabel">${label}</div>
+        <div class="fa-bar"><span class="fa-fill" style="width:${Math.max(0,Math.min(100,pct))}%"></span></div>
+        <div class="fa-val">${val}</div>
+      </div>`;
+  }
+  // 下巴角度定性：越小越尖
+  function chinQual(a){ return a<55?'尖锐':a>72?'圆润':'标准'; }
+  // 脸型 → 简短适配建议（随识别脸型动态变化）
+  function faceShapeAdvice(shape){
+    const map = {
+      '鹅蛋脸':'鹅蛋脸比例均衡，多数发型都适搭；可尝试中长微卷或锁骨发，凸显脸型优势。',
+      '圆脸':'圆脸建议增加头顶蓬松度与两侧层次，避免齐厚刘海，拉长视觉比例。',
+      '方脸':'方脸适合柔和曲线，推荐带弧度的中长发或微卷，柔化下颌线条。',
+      '长脸':'长脸宜用刘海缩短中庭、两侧加宽，避免过贴的高马尾。',
+      '心形脸':'心形脸额头偏宽，可用八字刘海修饰，发尾内扣更显精致。',
+      '菱形脸':'菱形脸颧骨突出，建议蓬松刘海与两侧遮颧，平衡轮廓。'
+    };
+    return map[shape] || '已为你匹配适配发型，可左右拖动微调贴合度。';
   }
 
   /* ---------- 推荐 / 方案 ---------- */
@@ -838,14 +880,12 @@
   const _RT_DETECT_INTERVAL = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 110 : 60;
   const _AR = window.AR_TUNE || { MIN_CONF:0.3, LOST_HOLD_MS:600, LOST_FADE_MS:400 };
 
-  // 检测困难时的软提示（不阻断流程）
+  // ★【规格四·容错分级】人脸丢失超过保持+淡出窗口后的用户提示（不阻断流程）
   function suggestFaceHint(){
-    const v=$('cam');
     const mob = (window.matchMedia && window.matchMedia('(max-width:768px)').matches);
-    // 需求七：人脸丢失超过短暂窗口 → 提示用户把脸对准镜头
     $('camHint').textContent = mob
-      ? '请将脸部对准镜头 · 未检到人脸，正对摄像头、调亮光线、避免侧脸；或点「上传照片」'
-      : '请将脸部对准镜头 · 未检到人脸，正对摄像头、调亮环境光、避免侧脸与逆光；或点「上传照片」';
+      ? '正对镜头，保持光线充足 · 未检到人脸；避免侧脸/逆光，或点「上传照片」'
+      : '正对镜头，保持光线充足 · 未检到人脸；请正对摄像头、调亮环境光、避免侧脸与逆光，或点「上传照片」';
   }
 
   function startRealtimeAR(){
@@ -1049,13 +1089,16 @@
     if(typeof resetHairSmoothing === 'function') resetHairSmoothing();
   }
 
-  // 人脸丢失：只累计计数与提示，位置由 _hairAlphaByTracking 的时间窗口统一管理
+  /* ★【规格四·人脸丢失分级容错】三级递进，位置/透明度由 _hairAlphaByTracking 的时间窗口统一管理：
+   *   ① 丢失 ≤ LOST_HOLD_MS(600ms)  → 保持上一帧位置，发型不消失（应对眨眼、瞬时遮挡、检测抖动）
+   *   ② 超过保持期                   → 在 LOST_FADE_MS(400ms) 内缓慢淡出，而非硬闪断
+   *   ③ 持续丢失                     → 提示「正对镜头，保持光线充足」，引导用户自行纠正 */
   function _rtOnFaceLost(){
     _rtNoFace++;
     if(_rtNoFace >= 3 && _rtNoFace < 6){
       updateAutoStatus('cooldown', '● 追踪中 · 人脸短暂离开，发型保留');
     }else if(_rtNoFace >= 6){
-      suggestFaceHint();   // 需求七：连续丢脸 ≥6 帧(≈0.36~0.66s)即提示"请将脸部对准镜头"
+      suggestFaceHint();   // 连续丢脸 ≥6 帧(≈0.36~0.66s)
     }
   }
 

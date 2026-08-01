@@ -135,10 +135,21 @@ const FaceAnalyzer = (() => {
     const L = dist(pts[8], {x:pts[27].x,y:topY});
     const FW = dist(pts[17], pts[26]);
     const JW = dist(pts[4], pts[12]);
+    // 下颌宽 / 颧宽比值（规格⑤）：衡量下颌相对颧骨的宽窄，用于脸型判定与发型修饰建议
+    const jawCheekRatio = +(JW / W).toFixed(2);
+    // 下巴尖锐角度（规格⑥）：下巴尖(pts[8])与左右下颌角(pts[4]/pts[12])所夹内角；越小越尖(V脸)，越大越圆/方
+    const _c8 = pts[8], _c4 = pts[4], _c12 = pts[12];
+    const _v1x = _c4.x - _c8.x, _v1y = _c4.y - _c8.y;
+    const _v2x = _c12.x - _c8.x, _v2y = _c12.y - _c8.y;
+    const _dot = _v1x*_v2x + _v1y*_v2y, _m1 = Math.hypot(_v1x,_v1y), _m2 = Math.hypot(_v2x,_v2y);
+    const chinAngle = (_m1 && _m2)
+      ? Math.round(Math.acos(Math.min(1, Math.max(-1, _dot / (_m1 * _m2)))) * 180 / Math.PI)
+      : 0;
     const metrics = {
       faceLength: Math.round(L), faceWidth: Math.round(W), cheekWidth: Math.round(W),
       foreheadWidth: Math.round(FW), jawWidth: Math.round(JW),
-      LWR: +(L / W).toFixed(2)
+      LWR: +(L / W).toFixed(2),
+      jawCheekRatio, chinAngle
     };
 
     // 性别估算（基于面部几何特征）

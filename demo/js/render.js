@@ -536,13 +536,24 @@ function buildHairSprite(img, meta, colorId, texture, cacheKey, featherPx){
   x.drawImage(img, 0, 0);
   x.globalCompositeOperation = 'source-over';
 
-  // 边缘透明融合：对整张精灵做一次轻量模糊再 destination-in，柔化 PNG 硬边/黑边
+  /* ★【规格五·发际线边缘抗锯齿】
+   * PNG 抠图边缘常残留两类瑕疵：① 阶梯状硬边锯齿；② 抠图带出的半透明深色描边（黑边光晕）。
+   * 一次 destination-in(模糊图) 即可同时解决，原理是最终 alpha = 原alpha × 模糊alpha：
+   *   · 主体内部：1 × 1 = 1             → 发型【不会整体变淡】
+   *   · 轮廓外侧：0 × 模糊值 = 0        → 羽化不会向外洇出，黑边光晕无处产生
+   *   · 轮廓边界：1 × (0,1) = 平滑过渡  → 硬边阶梯被软化，边缘自然内收（等效形态学腐蚀）
+   * ⚠ 切勿再叠一层 globalAlpha<1 的 destination-in 做"二次内缩"：
+   *   destination-in 下 globalAlpha 会乘到【整张图】的 alpha 上，
+   *   实测会把整个发型压到 35% 不透明度（曾出现"发型发灰、像蒙了层雾"）。
+   */
   if(featherPx && featherPx > 0){
     const tmp = document.createElement('canvas'); tmp.width = c.width; tmp.height = c.height;
     const tx = tmp.getContext('2d');
+    tx.imageSmoothingEnabled = true; tx.imageSmoothingQuality = 'high';
     tx.filter = `blur(${featherPx}px)`;
     tx.drawImage(c, 0, 0);
     tx.filter = 'none';
+    x.globalAlpha = 1;                      // ★ 必须为 1，否则整张发型被整体压暗
     x.globalCompositeOperation = 'destination-in';
     x.drawImage(tmp, 0, 0);
     x.globalCompositeOperation = 'source-over';
@@ -593,6 +604,16 @@ function applyHairTransform(ctx, T){
  *  ⑤ 保留顾客原发际线与碎发细节
  * ========================================================================= */
 function _clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+
+/* 分段软钳制（规格三）：|v| ≤ knee 区间【1:1 精确保真】，超出后用 tanh 渐进饱和到 ±max。
+ * 相比全域 tanh，避免了"正常倾头 30° 也被衰减 11%"的系统性误差；
+ * 相比硬 clamp，避免了到达上限瞬间的角速度突变（视觉上的"卡住再弹开"）。 */
+function _softLimit(v, knee, max){
+  const a = Math.abs(v);
+  if(a <= knee) return v;
+  const room = Math.max(1e-6, max - knee);
+  return Math.sign(v) * (knee + room * Math.tanh((a - knee) / room));
+}
 
 /* 离屏画布池：避免每帧重复分配 */
 const _tmpPool = {};
@@ -1052,6 +1073,30 @@ const AR_TUNE = {
   MIN_CONF:       0.30,  // ★ 置信度阈值：低于此暂停贴图，避免无效漂移
   LOST_HOLD_MS:   600,   // ★ 人脸短暂丢失：保持上一帧位置的时长
   LOST_FADE_MS:   400,   // ★ 保持期后的淡出时长（淡出完毕彻底隐藏）
+
+  /* ---- 【规格二】虚拟颅顶锚点基准 ---- */
+  CROWN_LIFT:     0.30,  // ★ 虚拟颅顶：自额顶(P10)沿头轴再上推的比例（×头高）→ 估算真实发际线之上的颅骨顶点
+  CROWN_BLEND:    0.62,  // ★ 基准融合权重：0=全用素材外推(旧行为) 1=全用实测虚拟颅顶。0.62=以解剖实测为主
+
+  /* ---- 【规格三】动态跟随：缩放阻尼 + 极限侧脸旋转钳制 ---- */
+  SCALE_DAMP:     0.55,  // ★ 缩放阻尼：缩放平滑系数 = 位移系数 × 此值（<1 → 缩放比位移更迟钝，杜绝忽大忽小）
+  SCALE_DEADZONE: 0.012,  // ★ 缩放死区：相对变化小于 1.2% 直接忽略，消除静止时的"呼吸式"缩放抖动
+  ROT_CLAMP_YAW:  0.55,  // ★ 极限侧脸判定起点：|yawN| 超过此值开始压制旋转（≈33°）
+  ROT_CLAMP_AMT:  0.60,  // ★ 极限侧脸最大旋转压制比例（1=完全归零）
+  ROT_KNEE:       0.60,  // ★ 旋转保真区（弧度，≈34°）：此范围内 1:1 精确跟随，绝不衰减
+  ROT_MAX:        0.90,  // ★ 旋转软上限（弧度，≈52°）：超出保真区后渐进饱和至此，防穿模/畸变
+
+  /* ---- 【规格四】双权重指数平滑 ---- */
+  SMOOTH_STATIC:  0.20,  // ★ 静态正脸：低系数 → 极稳，杜绝细微抖动
+  SMOOTH_DYNAMIC: 0.52,  // ★ 动态运动：高系数 → 跟手，杜绝拖影滞后
+  SMOOTH_SLOW:    0.22,  // ★ 慢速转头旋转系数（稳）
+  SMOOTH_FAST:    0.58,  // ★ 快速转头旋转系数（跟手）
+  MOTION_REF:     0.055, // 运动量归一化基准：单帧位移 / 头宽 达到此值即视为"完全动态"
+  ROT_MOTION_REF: 0.030, // 角速度归一化基准（弧度/帧）达到此值即视为"快转"
+
+  /* ---- 【规格五】渲染细节 ---- */
+  EDGE_FEATHER:   1.6,   // ★ 发际线边缘羽化半径(px)：柔化 PNG 硬边锯齿，同时天然内收消除黑边光晕
+
   DEBUG: (typeof location !== 'undefined' && /[?&]ardebug=1/.test(location.search))
 };
 // 暴露到全局：app.js 读取丢脸时间窗口；浏览器控制台可直接改参数实时调试，
@@ -1059,32 +1104,138 @@ const AR_TUNE = {
 window.AR_TUNE = AR_TUNE;
 
 /* =========================================================================
- * 【二·发型模板锚点配置】—— 把每款素材的"对齐锚点 / 基准缩放 / 偏移 / 旋转补偿"
- *        正式化为 HAIR_META[id] 上的独立字段（需求二）：
- *          hairAnchorX / hairAnchorY  素材 PNG 上的对齐锚点，归一化 0~1（即 像素 / 素材宽高）
- *                                    缺省由素材不透明包围盒顶边中点派生（等价于旧版 sCrown），
- *                                    因此【不填也完全兼容旧行为】，填了即可逐款微调颅顶落点。
- *          hairScale                 素材基准缩放（卷发/蓬松款 >1，贴头皮短发 <1），叠加在 scaleRate 之上
- *          offsetX / offsetY         相对头部的额外偏移（×头宽 / ×头高，正=右/下），与旧字段同义
- *          rotationOffset            素材相对头部的旋转补偿（弧度，正=顺时针），用于源图本身带倾斜的素材
- *        ★ 运行时归一化：扫描 HAIR_META，凡缺省字段一律按上述"缺省值"补上，保证 buildRealtimeTransform
- *          直接消费字段即可，无需到处写回退逻辑。调试面板(需求八)会把微调结果写回这些字段并持久化。
+ * 【规格二·发型锚点与素材配置机制】
+ *   每款发型拥有一套完全独立、互不干扰的配置，挂在 HAIR_META[id] 上：
+ *     ┌ id        发型编号（与 HAIRSTYLES.id 一致）
+ *     │ anchorX   素材 PNG 上的对齐锚点 X，归一化 0~1（= 像素 / 素材宽）
+ *     │ anchorY   素材 PNG 上的对齐锚点 Y，归一化 0~1（= 像素 / 素材高）
+ *     │ scaleBase 素材基准缩放（蓬松卷发 >1，贴头皮短发 <1）
+ *     │ offsetX   横向偏移（×头宽，正=向右）
+ *     │ offsetY   纵向偏移（×头高，正=向下）
+ *     └ rotFix    旋转补偿（弧度，正=顺时针），用于源图本身带倾斜的素材
+ *   ★ 缺省值：anchorX/Y 由素材不透明包围盒顶边中点派生 → 不填也完全兼容旧行为。
+ *   ★ 兼容别名：旧字段 hairAnchorX / hairAnchorY / hairScale / rotationOffset 与
+ *     新字段【双向同步】，任一侧被改写（含调试面板、localStorage 覆盖）都会生效。
+ *   ★ 分组预设：未单独标定的发型，按【长发 / 大波浪 / 短发 / 锁骨发】自动套用组预设，
+ *     避免 24 款逐一手调；单款一旦显式配置，即覆盖组预设（单款 > 组 > 缺省）。
  * ========================================================================= */
+
+/* ---- 分组预设：按 HAIRSTYLES 的 length / curl 自动归组（规格二） ----
+ * scaleBase   组基准缩放（与单款 scaleRate 相乘）
+ * offsetYAdd  ★ 组纵向【增量】，叠加在单款 offsetY 之上（不是覆盖）
+ *             —— 单款 offsetY 由素材 coverage 自动派生，刻画的是"这张图自身的构图"；
+ *                组增量刻画的是"这个品类的共性"，二者正交，应当相加而非二选一。
+ * anchorYAdj  组锚点纵向微调（仅在该款未显式配置 anchorY 时生效）
+ * ★ 幅度经保守标定：单款 scaleRate 已含 0.97~1.045 的品类区分，组系数只做二次微调，
+ *   避免与虚拟颅顶新基准叠加后过冲。 */
+const HAIR_GROUP_PRESET = {
+  // 大波浪/卷发：蓬松外扩略放大；★纵向额外下延最多，让卷发尾部自然垂落不"吊起来"
+  wave:     { scaleBase: 1.07, offsetYAdd:  0.030, anchorYAdj: -0.012 },
+  // 长发：整体略大，重心靠下
+  long:     { scaleBase: 1.03, offsetYAdd:  0.012, anchorYAdj: -0.008 },
+  // 短发：贴头皮，缩放收敛，避免头发大过脑袋
+  short:    { scaleBase: 0.99, offsetYAdd: -0.004, anchorYAdj:  0.005 },
+  // 锁骨发（中长）：介于两者之间
+  clavicle: { scaleBase: 1.01, offsetYAdd:  0.006, anchorYAdj: -0.003 }
+};
+
+/* 依据发型属性判定所属预设组：卷/波浪优先（蓬松度对贴合影响大于长度） */
+function resolveHairGroup(style){
+  if(!style) return 'clavicle';
+  const curl = style.curl || '', len = style.length || '';
+  if((curl === 'wave' || curl === 'curly') && len !== 'short') return 'wave';
+  if(len === 'long')   return 'long';
+  if(len === 'short')  return 'short';
+  return 'clavicle';
+}
+
+/* 新旧字段别名映射：新规范名 → 旧兼容名 */
+const _META_ALIAS = { anchorX:'hairAnchorX', anchorY:'hairAnchorY', scaleBase:'hairScale', rotFix:'rotationOffset' };
+
 function normalizeHairMeta(){
   if(typeof HAIR_META !== 'object' || !HAIR_META) return;
+  const styles = (typeof HAIRSTYLES !== 'undefined' && HAIRSTYLES) ? HAIRSTYLES : [];
   for(const k in HAIR_META){
     const m = HAIR_META[k];
     if(!m || typeof m !== 'object') continue;
     const w = m.w || 1, h = m.h || 1;
     const bx = (m.box && m.box.length === 4) ? m.box : [0, 0, w, h];
-    // ★【锚点配置】素材颅顶（发型基准原点）落在 PNG 上的归一化坐标，缺省=包围盒顶边中点
-    if(m.hairAnchorX == null)   m.hairAnchorX = ((bx[0] + bx[2]) / 2) / w;
-    if(m.hairAnchorY == null)   m.hairAnchorY = bx[1] / h;
-    if(m.hairScale == null)     m.hairScale = 1;        // ★ 缩放系数：素材基准倍率
-    if(m.rotationOffset == null) m.rotationOffset = 0;  // ★ 旋转补偿（弧度）
+
+    m.id = (m.id != null) ? m.id : (isNaN(+k) ? k : +k);
+
+    // ① 旧字段若已存在而新字段缺失 → 先把旧值提升为新字段（向后兼容）
+    for(const nk in _META_ALIAS){
+      const ok = _META_ALIAS[nk];
+      if(m[nk] == null && m[ok] != null && isFinite(m[ok])) m[nk] = m[ok];
+    }
+
+    // ② 组预设（仅填补未显式配置的项）
+    const style = styles.find(s => String(s.id) === String(m.id));
+    const grp   = resolveHairGroup(style);
+    const pre   = HAIR_GROUP_PRESET[grp] || {};
+    m.group = grp;
+
+    // ③ 锚点缺省＝素材不透明包围盒顶边中点，再叠加组预设的纵向微调
+    if(m.anchorX == null) m.anchorX = ((bx[0] + bx[2]) / 2) / w;
+    if(m.anchorY == null) m.anchorY = _clamp(bx[1] / h + (pre.anchorYAdj || 0), 0, 1);
+    // ④ 基准缩放 / 旋转补偿（缺省填充）
+    if(m.scaleBase == null) m.scaleBase = (pre.scaleBase != null) ? pre.scaleBase : 1;
+    if(m.offsetX   == null) m.offsetX   = 0;
+    if(m.rotFix    == null) m.rotFix    = 0;
+    // ⑤ ★纵向偏移＝素材自身标定值 + 组增量（幂等：原始值只快照一次，重复归一化不会累加）
+    if(m._rawOffsetY == null) m._rawOffsetY = (m.offsetY != null && isFinite(m.offsetY)) ? +m.offsetY : 0;
+    m.offsetY = m._rawOffsetY + (pre.offsetYAdd || 0);
+
+    // ⑥ 反向同步到旧字段名，保证历史代码 / 旧 localStorage 覆盖仍然可读可写
+    for(const nk in _META_ALIAS) m[_META_ALIAS[nk]] = m[nk];
+  }
+
+  /* ⑦ 单款永久预设库（hairmeta.js → hairStyleOverrides）最后应用：
+   *    优先级最高，直接覆盖（不参与组增量叠加），保证调试面板复制出的配置粘贴后所见即所得。 */
+  const ovr = (typeof window !== 'undefined') ? window.hairStyleOverrides : null;
+  if(ovr){
+    for(const id in ovr){
+      const src = ovr[id], dst = HAIR_META[id];
+      if(!src || !dst) continue;
+      for(const k in src){
+        if(src[k] == null || !isFinite(src[k])) continue;
+        dst[k] = +src[k];
+        if(_META_ALIAS[k]) dst[_META_ALIAS[k]] = +src[k];
+      }
+    }
   }
 }
+
+/* 单款重置为"缺省 + 组预设"（调试面板【重置】按钮调用，仅影响当前发型） */
+function resetHairMetaOne(id){
+  const m = (typeof HAIR_META === 'object' && HAIR_META) ? HAIR_META[id] : null;
+  if(!m) return null;
+  m.anchorX = m.anchorY = m.scaleBase = m.offsetX = m.offsetY = m.rotFix = null;
+  for(const nk in _META_ALIAS) m[_META_ALIAS[nk]] = null;
+  normalizeHairMeta();
+  return HAIR_META[id];
+}
+
+/* 读取单款生效配置（调试面板 / 复制配置文本用） */
+function getHairMetaConfig(id){
+  const m = (typeof HAIR_META === 'object' && HAIR_META) ? HAIR_META[id] : null;
+  if(!m) return null;
+  return {
+    id: m.id, group: m.group,
+    anchorX: +(+m.anchorX).toFixed(4), anchorY: +(+m.anchorY).toFixed(4),
+    scaleBase: +(+m.scaleBase).toFixed(3),
+    offsetX: +(+m.offsetX).toFixed(4), offsetY: +(+m.offsetY).toFixed(4),
+    rotFix: +(+m.rotFix).toFixed(4)
+  };
+}
+
 normalizeHairMeta();
+if(typeof window !== 'undefined'){
+  window.normalizeHairMeta = normalizeHairMeta;
+  window.resetHairMetaOne  = resetHairMetaOne;
+  window.getHairMetaConfig = getHairMetaConfig;
+  window.HAIR_GROUP_PRESET = HAIR_GROUP_PRESET;
+}
 
 /* =========================================================================
  * 统一锚点提取 —— 把两种检测源归一成同一套解剖锚点（画布像素坐标，未镜像）
@@ -1221,11 +1372,12 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
   const sEyeDist = Math.max(1, Math.hypot(sEyeR.x - sEyeL.x, sEyeR.y - sEyeL.y));
   const sRoll    = Math.atan2(sEyeR.y - sEyeL.y, sEyeR.x - sEyeL.x);
   const sBox     = (meta.box && meta.box.length === 4) ? meta.box : [0, 0, meta.w, meta.h];
-  // ★【锚点配置·素材侧】发型基准原点＝素材 PNG 上的对齐锚点(hairAnchorX/Y 归一化 0~1)，
-  //   缺省由包围盒顶边中点派生；填了 hairAnchorX/Y 即可逐款把颅顶钉在素材任意位置（需求二）。
-  const hairAnchorX = (meta.hairAnchorX != null && isFinite(meta.hairAnchorX)) ? meta.hairAnchorX : ((sBox[0] + sBox[2]) / 2) / meta.w;
-  const hairAnchorY = (meta.hairAnchorY != null && isFinite(meta.hairAnchorY)) ? meta.hairAnchorY : sBox[1] / meta.h;
-  const sCrown   = { x: hairAnchorX * meta.w, y: hairAnchorY * meta.h };   // 素材颅顶（锚点还原为像素）
+  // ★【规格二·锚点配置·素材侧】发型基准原点＝素材 PNG 上的对齐锚点 anchorX/anchorY（归一化 0~1），
+  //   缺省由包围盒顶边中点派生；兼容旧字段名 hairAnchorX/hairAnchorY。
+  const _pick = (a, b, d) => (a != null && isFinite(a)) ? a : ((b != null && isFinite(b)) ? b : d);
+  const anchorX = _pick(meta.anchorX, meta.hairAnchorX, ((sBox[0] + sBox[2]) / 2) / meta.w);
+  const anchorY = _pick(meta.anchorY, meta.hairAnchorY, sBox[1] / meta.h);
+  const sCrown  = { x: anchorX * meta.w, y: anchorY * meta.h };   // 素材颅顶（锚点还原为像素）
 
   /* ---------- ④ 自适应缩放：远近实时跟随 ----------
    * 双信号互补融合，两者盲区正好错开：
@@ -1255,24 +1407,50 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
   }
   const scaleRate   = (meta.scaleRate != null && isFinite(meta.scaleRate)) ? meta.scaleRate : 1;  // ★ 单款倍率（HAIR_META）
   const legacyScale = (meta.arScale   != null && isFinite(meta.arScale))   ? meta.arScale   : 1;  // 兼容旧参数
-  const hairScale   = (meta.hairScale != null && isFinite(meta.hairScale)) ? meta.hairScale : 1;  // ★ 缩放系数：素材基准倍率（需求二）
-  // ★【缩放系数】自适应尺寸 × 单款倍率 × 素材基准倍率 × 全局缩放 → 远近实时跟随人头大小
-  let scale = _clamp(sizeSig * scaleRate * legacyScale * hairScale * AR_TUNE.SCALE_BOOST,
+  const scaleBase   = _pick(meta.scaleBase, meta.hairScale, 1);  // ★【规格二】素材基准缩放（兼容旧名 hairScale）
+  // ★【缩放系数】自适应尺寸 × 单款倍率 × 素材基准缩放 × 全局缩放 → 远近实时跟随人头大小
+  let scale = _clamp(sizeSig * scaleRate * legacyScale * scaleBase * AR_TUNE.SCALE_BOOST,
                      AR_TUNE.SCALE_MIN, AR_TUNE.SCALE_MAX);
 
-  /* ---------- ⑤ UI 手动微调（优先级最高） ---------- */
+  /* ---------- ⑤ UI 手动微调（优先级最高）+ 极限侧脸旋转钳制 ---------- */
   const uScale = (fit.scale != null && isFinite(fit.scale)) ? _clamp(fit.scale, 0.5, 1.8) : 1;
   const uDx = fit.dx || 0, uDy = fit.dy || 0, uRot = fit.rot || 0;
   const finalScale = scale * uScale;
-  const rotationOffset = (meta.rotationOffset != null && isFinite(meta.rotationOffset)) ? meta.rotationOffset : 0; // ★ 旋转补偿（弧度，需求二）
-  const angle = (roll - sRoll) + uRot + rotationOffset;
+  const rotFix = _pick(meta.rotFix, meta.rotationOffset, 0);   // ★【规格二】旋转补偿（弧度，兼容旧名 rotationOffset）
+  /* ★【规格三·极限侧脸旋转钳制】
+   *   大角度侧脸时 roll 的测量误差急剧放大（双眼几乎重合，atan2 分母趋零），
+   *   若原样跟随会让发型剧烈摆动甚至穿透面部。此处做两级保护：
+   *     ① 侧脸压制：|yawN| 越过 ROT_CLAMP_YAW 后，roll 分量按比例线性衰减到 (1-ROT_CLAMP_AMT)
+   *     ② 软饱和  ：整体角度用 tanh 软钳制到 ±ROT_MAX，越界渐进逼近而非硬截断 → 无跳变、不穿模
+   */
+  const yawExcess = _clamp((Math.abs(yawN) - AR_TUNE.ROT_CLAMP_YAW) / Math.max(1e-3, 1 - AR_TUNE.ROT_CLAMP_YAW), 0, 1);
+  const rollGain  = 1 - yawExcess * AR_TUNE.ROT_CLAMP_AMT;
+  const rawAngle  = (roll - sRoll) * rollGain + uRot + rotFix;
+  const angle     = _softLimit(rawAngle, AR_TUNE.ROT_KNEE, AR_TUNE.ROT_MAX);
 
-  /* ---------- ⑥ 颅顶落点：发型基准原点在"额上颅顶"，不是脸中心 ---------- */
-  // 素材自身的「眼中心 → 颅顶」向量，经旋转+缩放搬到顾客头上 → 头部比例自动匹配
+  /* ---------- ⑥ 颅顶落点：基准＝【虚拟颅顶】，不是脸中心（规格二） ----------
+   * 旧方案用「素材眼中心 → 素材锚点」向量外推，完全依赖素材自身比例：
+   *   素材模特额头高/发际线低，就会整体带偏，个体适配差。
+   * 新方案引入【实测虚拟颅顶】：以额顶特征点 P(10) 为起点，沿头部朝上轴再外推
+   *   CROWN_LIFT × 头高 —— 因为 P(10) 只是额头最高点，真实颅骨顶点还在其上方，
+   *   这段距离与头高强相关，比例稳定，个体差异远小于"额头高低"。
+   * 两路结果按 CROWN_BLEND 融合：以解剖实测为主（抗个体差异），素材外推为辅
+   *   （保留素材自身的发型重心信息），兼顾"贴得准"与"戴得像"。
+   * -------------------------------------------------------------------- */
   const ca = Math.cos(angle), sa = Math.sin(angle);
+  // 路径 A：素材比例外推（旧行为）
   const vx = (sCrown.x - sEyeMid.x) * finalScale, vy = (sCrown.y - sEyeMid.y) * finalScale;
   const crownProp = { x: eyeMid.x + (vx * ca - vy * sa), y: eyeMid.y + (vx * sa + vy * ca) };
-  // ★【偏移参数】offsetY(×头高，正=下移) / offsetX(×头宽，正=右移)——素材相对头部的额外对齐微调（需求二）
+  // 路径 B：实测虚拟颅顶（额顶沿头轴上推）
+  const lift = AR_TUNE.CROWN_LIFT * headH;
+  const crownReal = { x: A.foreheadTop.x + up.x * lift, y: A.foreheadTop.y + up.y * lift };
+  // 融合
+  const kB = _clamp(AR_TUNE.CROWN_BLEND, 0, 1);
+  const crownBase = {
+    x: crownProp.x * (1 - kB) + crownReal.x * kB,
+    y: crownProp.y * (1 - kB) + crownReal.y * kB
+  };
+  // ★【偏移参数】offsetY(×头高，正=下移) / offsetX(×头宽，正=右移)——素材相对头部的额外对齐微调（规格二）
   const offsetY = (meta.offsetY != null && isFinite(meta.offsetY)) ? meta.offsetY : 0;
   const offsetX = (meta.offsetX != null && isFinite(meta.offsetX)) ? meta.offsetX : 0;
   // 转头视差补偿：颅顶位于头部中轴线【偏后】，双眼位于【偏前】，二者深度不同。
@@ -1282,22 +1460,33 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
   // 俯仰视差补偿：同理，抬头(pitchN>0)时头往后仰，颅顶在图像上朝【下】走；低头则朝上。
   const vertical = (offsetY + pitchN * AR_TUNE.PITCH_SHIFT) * headH;
   const crown = {
-    x: crownProp.x - up.x * vertical + right.x * lateral,
-    y: crownProp.y - up.y * vertical + right.y * lateral
+    x: crownBase.x - up.x * vertical + right.x * lateral,
+    y: crownBase.y - up.y * vertical + right.y * lateral
   };
 
-  /* ---------- ⑦ 输出变换 ---------- */
+  /* ---------- ⑦ 头部包围框（调试可视化用，随 roll 旋转的 OBB 四角） ---------- */
+  const hw = headW * 0.5, hUp = headH * 0.62, hDn = headH * 0.52;
+  const headBox = [
+    { x: crownReal.x - right.x*hw + up.x*(hUp-headH*0.62), y: crownReal.y - right.y*hw + up.y*(hUp-headH*0.62) },
+    { x: crownReal.x + right.x*hw, y: crownReal.y + right.y*hw },
+    { x: A.chin.x + right.x*hw - up.x*(hDn-headH*0.52), y: A.chin.y + right.y*hw - up.y*(hDn-headH*0.52) },
+    { x: A.chin.x - right.x*hw, y: A.chin.y - right.y*hw }
+  ];
+
+  /* ---------- ⑧ 输出变换 ---------- */
   const T = {
     ox: sCrown.x, oy: sCrown.y,                                     // 变换原点＝素材颅顶
     dx: crown.x + uDx + (meta.arDx != null ? meta.arDx : 0),        // 落点＝实检颅顶
     dy: crown.y + uDy + (meta.arDy != null ? meta.arDy : 0),
     angle: angle,
-    // ★【旋转补偿】yawComp / pitchComp：转头/俯仰时发型横向/纵向压缩，跟随头部透视（需求五）
+    // ★【旋转补偿】yawComp / pitchComp：转头/俯仰时发型横向/纵向压缩，跟随头部透视（规格三）
     sx: finalScale * AR_TUNE.HAIR_W_COEFF * yawComp,
     sy: finalScale * pitchComp,
     pose: { yaw: yawN, pitch: pitchN, roll: roll, matrix: poseMat },
     headW: headW, headH: headH, eyeDist: eyeDist,
-    anchors: A, eyeMid: eyeMid, crown: crown
+    anchors: A, eyeMid: eyeMid, crown: crown,
+    crownReal: crownReal, headBox: headBox, rollGain: rollGain,
+    cfg: { anchorX: anchorX, anchorY: anchorY, scaleBase: scaleBase, offsetX: offsetX, offsetY: offsetY, rotFix: rotFix, group: meta.group || '' }
   };
   T.valid = isFinite(T.dx) && isFinite(T.dy) && isFinite(T.sx) && isFinite(T.sy) && isFinite(T.angle)
             && T.sx > 0.02 && T.sy > 0.02 && eyeDist > 8 && Math.abs(angle) < 1.4;
@@ -1305,29 +1494,63 @@ function buildRealtimeTransform(landmarks, matrix, meta, opts){
 }
 
 /* =========================================================================
- * 双阶滤波·第二阶：对变换参数(dx/dy/sx/sy/angle/ox/oy)再做指数平滑
- *   ★ 修复历史缺陷：旧版未复制 ox/oy → 渲染时 translate(NaN,NaN) 被浏览器静默
- *     忽略，发型原点没有回退，导致"发型独立悬浮、与人头脱节"。
+ * 【规格四·统一指数平滑（坐标 / 缩放 / 旋转）+ 规格三·缩放阻尼与慢快双系数】
+ *
+ *   双阶滤波·第二阶：对变换参数(dx/dy/sx/sy/angle/ox/oy)做自适应指数平滑。
+ *   一套系数走天下必然二选一：调稳则拖影、调跟手则抖动。因此按【运动状态】动态调权：
+ *
+ *   ┌ 坐标 —— 运动量 m = 单帧位移 / 头宽，归一到 [0,1]
+ *   │        α_pos = SMOOTH_STATIC + (SMOOTH_DYNAMIC - SMOOTH_STATIC) × m
+ *   │        静止正脸 → 0.20（极稳，肉眼无抖）；快速移动 → 0.52（紧跟，无滞后）
+ *   │
+ *   ├ 缩放 —— ★ 阻尼：α_scale = α_pos × SCALE_DAMP，天生比位移迟钝
+ *   │        ★ 死区：相对变化 < SCALE_DEADZONE(1.2%) 直接冻结
+ *   │        原因：缩放由眼距/纵距【比值】驱动，关键点 1px 噪声就会放大成尺寸抖动，
+ *   │              视觉上表现为"发型呼吸式忽大忽小"，比位移抖动更刺眼。
+ *   │
+ *   └ 旋转 —— ★ 慢转/快转双系数：按角速度在 SMOOTH_SLOW(0.22) ↔ SMOOTH_FAST(0.58) 间插值
+ *            慢慢转头时高度平滑（不抖），猛地转头时快速收敛（不甩尾）。
+ *
+ *   ★ 历史缺陷修复保留：ox/oy 必须复制，否则渲染 translate(NaN,NaN) 被浏览器静默忽略，
+ *     发型原点不回退 → "发型独立悬浮、与人头脱节"。
  * ========================================================================= */
 let _hairTSmooth = null;
-const _T_SMOOTH = 0.32;   // 越小越稳（抗抖动），越大越跟手
 function resetHairSmoothing(){ _hairTSmooth = null; }
 function smoothTransform(T){
   if(!T) return null;
   if(!_hairTSmooth){
-    _hairTSmooth = { dx:T.dx, dy:T.dy, sx:T.sx, sy:T.sy, angle:T.angle, ox:T.ox, oy:T.oy, valid:T.valid };
+    _hairTSmooth = { dx:T.dx, dy:T.dy, sx:T.sx, sy:T.sy, angle:T.angle, ox:T.ox, oy:T.oy, valid:T.valid, m:0, rm:0 };
     return _hairTSmooth;
   }
-  const a = _T_SMOOTH;
-  _hairTSmooth.dx    += (T.dx    - _hairTSmooth.dx)    * a;
-  _hairTSmooth.dy    += (T.dy    - _hairTSmooth.dy)    * a;
-  _hairTSmooth.sx    += (T.sx    - _hairTSmooth.sx)    * a;
-  _hairTSmooth.sy    += (T.sy    - _hairTSmooth.sy)    * a;
-  _hairTSmooth.angle += (T.angle - _hairTSmooth.angle) * a;
-  _hairTSmooth.ox     = T.ox;    // 素材原点随款式切换直接吸附，不做插值
-  _hairTSmooth.oy     = T.oy;
-  _hairTSmooth.valid  = T.valid;
-  return _hairTSmooth;
+  const S = _hairTSmooth;
+  const ref = Math.max(20, T.headW || 120);
+
+  /* ① 运动量估计（对运动量本身也做平滑，避免单帧噪声让系数忽高忽低） */
+  const dist    = Math.hypot(T.dx - S.dx, T.dy - S.dy) / ref;
+  const rotDist = Math.abs(T.angle - S.angle);
+  S.m  += (_clamp(dist    / AR_TUNE.MOTION_REF,     0, 1) - S.m)  * 0.35;
+  S.rm += (_clamp(rotDist / AR_TUNE.ROT_MOTION_REF, 0, 1) - S.rm) * 0.35;
+
+  /* ② 坐标：静态 ↔ 动态 双权重 */
+  const aPos = AR_TUNE.SMOOTH_STATIC + (AR_TUNE.SMOOTH_DYNAMIC - AR_TUNE.SMOOTH_STATIC) * S.m;
+  S.dx += (T.dx - S.dx) * aPos;
+  S.dy += (T.dy - S.dy) * aPos;
+
+  /* ③ 缩放：阻尼 + 死区 */
+  const aScale = aPos * AR_TUNE.SCALE_DAMP;
+  const relX = Math.abs(T.sx - S.sx) / Math.max(1e-4, Math.abs(S.sx));
+  const relY = Math.abs(T.sy - S.sy) / Math.max(1e-4, Math.abs(S.sy));
+  if(relX > AR_TUNE.SCALE_DEADZONE) S.sx += (T.sx - S.sx) * aScale;
+  if(relY > AR_TUNE.SCALE_DEADZONE) S.sy += (T.sy - S.sy) * aScale;
+
+  /* ④ 旋转：慢转 ↔ 快转 双系数 */
+  const aRot = AR_TUNE.SMOOTH_SLOW + (AR_TUNE.SMOOTH_FAST - AR_TUNE.SMOOTH_SLOW) * S.rm;
+  S.angle += (T.angle - S.angle) * aRot;
+
+  S.ox = T.ox;    // 素材原点随款式切换直接吸附，不做插值
+  S.oy = T.oy;
+  S.valid = T.valid;
+  return S;
 }
 
 /* =========================================================================
@@ -1346,11 +1569,17 @@ function renderRealtimeAR(canvas, opts){
   const vw = opts.video.videoWidth || W;
   const vh = opts.video.videoHeight || H;
 
+  // ★【规格五】高质量重采样：发型被缩放/旋转后仍保持平滑边缘，不出现像素阶梯
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
   // ★ 镜像上下文：视频与发型在同一镜像空间绘制 → 二者同步翻转，左右严格对齐
   ctx.save();
   ctx.translate(W, 0); ctx.scale(-1, 1);
 
-  // —— 图层①：摄像头画面（底层，按画布比例拉伸铺满，坐标系严格对齐）——
+  // —— ★【规格五·图层锁定】图层①：摄像头画面（底层）——
+  //    发型永远在同一 ctx 中【后】绘制，绘制顺序即层级，物理上不可能被视频帧覆盖，
+  //    也不存在多 canvas 的 z-index 竞争 → 发型层始终锁定在画面上方。
   ctx.drawImage(opts.video, 0, 0, vw, vh, 0, 0, W, H);
 
   // —— 图层②：发型透明 PNG（顶层）——
@@ -1364,7 +1593,8 @@ function renderRealtimeAR(canvas, opts){
     });
     T = (T0 && T0.valid) ? smoothTransform(T0) : null;
     if(T && isFinite(T.ox) && isFinite(T.oy)){
-      const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|' + opts.hairImg.src, 2.5);
+      // ★【规格五】发际线边缘抗锯齿：羽化半径统一由 AR_TUNE.EDGE_FEATHER 控制
+      const sprite = buildHairSprite(opts.hairImg, opts.hairMeta, opts.colorId, opts.texture, 'realtime|' + opts.hairImg.src, AR_TUNE.EDGE_FEATHER);
       const op = (opts.fit && opts.fit.opacity != null && isFinite(opts.fit.opacity)) ? _clamp(opts.fit.opacity, 0.2, 1) : 1;
       ctx.save();
       ctx.globalAlpha = op * alpha;
@@ -1384,25 +1614,57 @@ function renderRealtimeAR(canvas, opts){
   return T;
 }
 
-/* 调试叠加层（仅 URL 带 ?ardebug=1 时启用）：可视化锚点，便于逐款校准 */
+/* =========================================================================
+ * 【规格一·调试叠加层】URL 带 ?ardebug=1 时启用。绘制内容：
+ *   ● 红点(大)   颅顶基准 —— 发型 PNG 锚点最终被钉住的位置（最关键的判读依据）
+ *   ● 红圈(空心) 实测虚拟颅顶 —— 未叠加偏移前的解剖基准，与红点的差＝offsetX/Y 生效量
+ *   ● 青点       双眼锚点        ● 橙点 额顶 P(10)      ● 黄点 眉心
+ *   ● 绿点       下巴            ● 品红 左右太阳穴
+ *   ▭ 绿框       头部包围框（随 roll 旋转的 OBB）
+ * 判读方法：红点应稳定落在头顶正上方发际线之上；随头移动/转动时，红点须"焊"在头上不漂。
+ * ========================================================================= */
 function drawArDebug(ctx, T, W, H){
   const A = T.anchors; if(!A) return;
   ctx.save();
   ctx.translate(W, 0); ctx.scale(-1, 1);
-  const dot = (p, c, r) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(p.x, p.y, r || 4, 0, Math.PI * 2); ctx.fill(); };
+
+  // —— 头部包围框 ——
+  if(T.headBox && T.headBox.length === 4){
+    ctx.strokeStyle = 'rgba(60,255,120,.9)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(T.headBox[0].x, T.headBox[0].y);
+    for(let i = 1; i < 4; i++) ctx.lineTo(T.headBox[i].x, T.headBox[i].y);
+    ctx.closePath(); ctx.stroke();
+  }
+
+  const dot = (p, c, r) => { if(!p) return; ctx.fillStyle = c; ctx.beginPath(); ctx.arc(p.x, p.y, r || 4, 0, Math.PI * 2); ctx.fill(); };
   dot(A.eyeL, '#00e5ff'); dot(A.eyeR, '#00e5ff');
   dot(A.browMid, '#ffd400'); dot(A.foreheadTop, '#ff7b00');
   dot(A.chin, '#7cff00'); dot(A.templeL, '#ff00c8'); dot(A.templeR, '#ff00c8');
+
+  // 实测虚拟颅顶（空心红圈）——偏移前的解剖基准
+  if(T.crownReal){
+    ctx.strokeStyle = 'rgba(255,80,80,.95)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(T.crownReal.x, T.crownReal.y, 9, 0, Math.PI * 2); ctx.stroke();
+  }
+  // ★ 颅顶基准红点（发型锚点最终落点）
   dot(T.crown, '#ff2d2d', 6);
+
   ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(A.eyeL.x, A.eyeL.y); ctx.lineTo(A.eyeR.x, A.eyeR.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(T.eyeMid.x, T.eyeMid.y); ctx.lineTo(T.crown.x, T.crown.y); ctx.stroke();
   ctx.restore();
-  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(8, 8, 250, 92);
+
+  const c = T.cfg || {};
+  ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.fillRect(8, 8, 288, 128);
   ctx.fillStyle = '#fff'; ctx.font = '12px monospace';
-  ctx.fillText('src=' + A.source + '  n=' + A.n, 16, 26);
+  ctx.fillText('src=' + A.source + '  n=' + A.n + '  grp=' + (c.group || '-'), 16, 26);
   ctx.fillText('scale sx=' + T.sx.toFixed(3) + ' sy=' + T.sy.toFixed(3), 16, 44);
   ctx.fillText('headW=' + T.headW.toFixed(1) + ' headH=' + T.headH.toFixed(1), 16, 62);
   ctx.fillText('yaw=' + T.pose.yaw.toFixed(2) + ' pitch=' + T.pose.pitch.toFixed(2) + ' roll=' + T.pose.roll.toFixed(2), 16, 80);
-  ctx.fillText('eyeDist=' + T.eyeDist.toFixed(1) + '  angle=' + T.angle.toFixed(3), 16, 96);
+  ctx.fillText('angle=' + T.angle.toFixed(3) + ' rollGain=' + (T.rollGain != null ? T.rollGain.toFixed(2) : '-'), 16, 98);
+  ctx.fillText('anc=' + (+c.anchorX).toFixed(3) + ',' + (+c.anchorY).toFixed(3) +
+               ' base=' + (+c.scaleBase).toFixed(2) +
+               ' off=' + (+c.offsetX).toFixed(3) + ',' + (+c.offsetY).toFixed(3), 16, 116);
+  ctx.fillText('eyeDist=' + T.eyeDist.toFixed(1) + '  rotFix=' + (+c.rotFix).toFixed(3), 16, 132);
 }
