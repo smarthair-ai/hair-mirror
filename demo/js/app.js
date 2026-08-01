@@ -5,7 +5,7 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-08-01T15:20+08:00 · AR-v2.3 · 左固定+右上并排+右下发型库';
+  const BUILD_VERSION = '2026-08-01T16:10+08:00 · AR-v2.3 · 修复摄像预览框固定显示';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
 

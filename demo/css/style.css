@@ -540,9 +540,10 @@ input[type=range]{width:100%; height:40px; accent-color:var(--brand);}
 
 .studio-top{display:grid; grid-template-columns:minmax(340px,42%) 1fr; gap:16px; align-items:start;}
 
-/* 左侧：实时 AR 试戴主窗口（滚动时固定不动） */
+/* 左侧：实时 AR 试戴主窗口（滚动时固定不动；子项禁止收缩，避免画布被挤压塌缩） */
 .stage{min-width:0; display:flex; flex-direction:column; gap:10px;
   position:sticky; top:72px; align-self:start; max-height:calc(100vh - 84px); overflow-y:auto;}
+.stage > *{flex-shrink:0;}
 .stage-head{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;}
 .stage-head h2{margin:0; font-size:17px; color:#fff;}
 .stage .cam-wrap{max-height:62vh; aspect-ratio:3/4;}
