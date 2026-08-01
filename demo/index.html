@@ -71,7 +71,6 @@
   </div>
   <nav class="topnav" id="topnav">
     <button class="navtab active" data-page="studio">✂ 试戴工作台</button>
-    <button class="navtab" data-page="library">📚 本店发型库</button>
     <button class="navtab" data-page="popular">🔥 热门榜单</button>
     <button class="navtab" data-page="season">📅 季节专题</button>
     <button class="navtab" data-page="archive">🗂 方案存档</button>
@@ -186,23 +185,38 @@
       <p id="statusMsg" class="status"></p>
     </section>
 
-    <!-- ---------- 右侧：为你推荐 3 款发型预览卡片 ---------- -->
+    <!-- ---------- 右侧信息面板：上半(脸型分析+推荐)并排 / 下半(本店发型库)滚动 ---------- -->
     <section class="style-browser">
-      <!-- Block 1：脸型实时数据分析（原左侧 ② 面部分析 模块，含 6 项指标 + 进度条 + 适配文案） -->
-      <div class="card face-analysis-card">
-        <h3>📐 脸型实时数据分析</h3>
-        <div id="metricsBox" class="metrics face-analysis">
-          <span class="m-tag">尚未分析</span>
-          <p class="hint">自动检测后提取脸型、肤色冷暖与性别，可手动修改。</p>
+      <!-- 右侧上半：脸型分析（左小块）+ 为你推荐（右小块）同一行并排 -->
+      <div class="right-top">
+        <!-- Block1：脸型实时数据分析（缩小版） -->
+        <div class="card face-analysis-card">
+          <h3>📐 脸型实时数据分析</h3>
+          <div id="metricsBox" class="metrics face-analysis">
+            <span class="m-tag">尚未分析</span>
+            <p class="hint">自动检测后提取脸型、肤色冷暖与性别，可手动修改。</p>
+          </div>
+        </div>
+        <!-- Block2：为你推荐 3 卡（缩小、横向并排） -->
+        <div class="rec-block">
+          <div class="browser-head">
+            <h2>💇 为你推荐 <span class="mini-note">点卡片即切换试戴</span></h2>
+          </div>
+          <div id="recCards" class="rec-cards"></div>
         </div>
       </div>
 
-      <div class="browser-head">
-        <h2>💇 为你推荐 <span class="mini-note">点卡片即切换试戴</span></h2>
+      <!-- 右侧下半：本店发型库（竖向滚动；滚动时上方脸型分析 + 推荐保持固定） -->
+      <div class="right-bottom">
+        <div class="library-block">
+          <div class="lib-head">
+            <h3>📚 本店发型库 <span class="mini-note">共 <span id="dbCountStudio">0</span> 款 · 点卡片即在左侧试戴</span></h3>
+          </div>
+          <div class="library-scroll">
+            <div id="allGridStudio" class="grid grid-lib"></div>
+          </div>
+        </div>
       </div>
-      <!-- 3 张推荐卡片（对应系统匹配的 3 款发型，点击切换左侧实时试戴） -->
-      <div id="recCards" class="rec-cards"></div>
-      <p class="hint browser-hint">系统按脸型 / 肤色 / 发质匹配 3 款，左侧实时跟随试戴；想看更多发型可到顶部「本店发型库」。</p>
     </section>
   </div>
 

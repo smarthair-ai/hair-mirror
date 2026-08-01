@@ -5,7 +5,7 @@
   'use strict';
 
   // 构建版本戳：每次部署更新此值，便于确认线上是否为最新版（见页面右下角徽标）
-  const BUILD_VERSION = '2026-07-31T18:20+08:00 · AR-v2.3 · 左右分栏布局';
+  const BUILD_VERSION = '2026-08-01T15:20+08:00 · AR-v2.3 · 左固定+右上并排+右下发型库';
   window.__SMARTHAIR_BUILD__ = BUILD_VERSION;
   console.log('%c[SmartHair AI] AR build ' + BUILD_VERSION, 'color:#6c8cff;font-weight:bold');
 
@@ -623,28 +623,37 @@
   }
 
   /* ---------- 全部发型（点击试戴，不依赖脸型/肤色推荐） ---------- */
+  // 构建单张发型卡（本店发型库 / 通用）：含「试戴」「收藏」按钮，点击即在左侧 AR 实时预览
+  function buildStyleCard(st){
+    const card=document.createElement('div'); card.className='style-card'; card.dataset.id=st.id;
+    const thumb=createRealThumb(st, null, 'thumb'); card.appendChild(thumb);
+    const body=document.createElement('div'); body.className='body';
+    body.innerHTML=`<div class="nm">${st.name}</div>
+      <div class="meta">${st.feature}｜难度<span class="${diffClass(st.difficulty)}">${st.difficultyLabel}</span></div>
+      <div class="scene">适用场景：${styleScene(st.id)}</div>
+      <div class="home-tip">🏠 居家打理：${styleHomeTip(st.id)}</div>
+      <div class="avoid-mini">⚠ ${styleAvoid(st.id)}</div>
+      <div class="tags">${st.styleTags.map(t=>`<span class="chip">${t}</span>`).join('')}</div>
+      <div class="acts"><button class="use">试戴</button><button class="fav">${STATE.favorites.includes(st.id)?'★':'☆'}</button></div>`;
+    card.appendChild(body);
+    body.querySelector('.use').onclick=()=>applyStyle(st.id);
+    body.querySelector('.fav').onclick=(e)=>{ toggleFav(st.id); e.target.textContent=STATE.favorites.includes(st.id)?'★':'☆'; };
+    if(st.id===STATE.selectedStyleId) card.classList.add('active-style');
+    return card;
+  }
+  // 同时渲染到「本店发型库」页面(#allGrid) 与 工作台内嵌发型库(#allGridStudio)
   function renderAllStyles(){
-    const box=$('allGrid'); if(!box) return; box.innerHTML='';
-    HAIRSTYLES.forEach(st=>{
-      const card=document.createElement('div'); card.className='style-card'; card.dataset.id=st.id;
-      const thumb=createRealThumb(st, null, 'thumb'); card.appendChild(thumb);
-      const body=document.createElement('div'); body.className='body';
-      body.innerHTML=`<div class="nm">${st.name}</div>
-        <div class="meta">${st.feature}｜难度<span class="${diffClass(st.difficulty)}">${st.difficultyLabel}</span></div>
-        <div class="scene">适用场景：${styleScene(st.id)}</div>
-        <div class="home-tip">🏠 居家打理：${styleHomeTip(st.id)}</div>
-        <div class="avoid-mini">⚠ ${styleAvoid(st.id)}</div>
-        <div class="tags">${st.styleTags.map(t=>`<span class="chip">${t}</span>`).join('')}</div>
-        <div class="acts"><button class="use">试戴</button><button class="fav">${STATE.favorites.includes(st.id)?'★':'☆'}</button></div>`;
-      card.appendChild(body); box.appendChild(card);
-      body.querySelector('.use').onclick=()=>applyStyle(st.id);
-      body.querySelector('.fav').onclick=(e)=>{ toggleFav(st.id); e.target.textContent=STATE.favorites.includes(st.id)?'★':'☆'; };
-      if(st.id===STATE.selectedStyleId) card.classList.add('active-style');
+    ['allGrid','allGridStudio'].forEach(id=>{
+      const box=$(id); if(!box) return; box.innerHTML='';
+      HAIRSTYLES.forEach(st=> box.appendChild(buildStyleCard(st)));
     });
+    const dcs=$('dbCountStudio'); if(dcs) dcs.textContent=HAIRSTYLES.length;
   }
   function updateAllActive(){
-    document.querySelectorAll('#allGrid .style-card').forEach(c=>{
-      c.classList.toggle('active-style', parseInt(c.dataset.id,10)===STATE.selectedStyleId);
+    ['#allGrid','#allGridStudio'].forEach(sel=>{
+      document.querySelectorAll(sel+' .style-card').forEach(c=>{
+        c.classList.toggle('active-style', parseInt(c.dataset.id,10)===STATE.selectedStyleId);
+      });
     });
   }
 
@@ -1588,6 +1597,7 @@
   /* ---------- 初始化 ---------- */
   function init(){
     $('dbCount').textContent=HAIRSTYLES.length;
+    const _dcs=$('dbCountStudio'); if(_dcs) _dcs.textContent=HAIRSTYLES.length;
     // 脸型下拉
     const mf=$('manFace'); FACE_SHAPES.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; mf.appendChild(o); });
     // 性别下拉
